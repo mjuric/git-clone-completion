@@ -1,0 +1,56 @@
+#!/bin/bash
+#
+# Clone a github or other remote git repository to a predefined local location
+# Similar to "go get"
+#
+
+PROJECTS="$HOME/projects"
+
+if [[ -z $1 ]]; then
+	echo "A universal go-get equivalent; git clone a repository into $PROJECTS."
+	echo "Usage: $(basename $0) <repository_url>" 1>&2
+	echo "Example: $(basename $0) git@github.com:mjuric/lsd" 1>&2
+	exit -1;
+fi
+
+# Supported URL types:
+#   user@host.name:base/dir/reponame
+#   https://host.name/base/dir/reponame
+#   org/reponame (defaults to looking for it at git@github.com)
+URL="$1"
+if [[ $URL == "https://"* ]]; then
+	echo "H"
+	HOST=$(cut -d / -f 3 <<< "$URL")
+	DIR=$(cut -d / -f 4- <<< "$URL")
+elif [[ $URL == *"@"* ]]; then
+	echo "G"
+	IFS=':' read -ra A <<< "$URL"
+	FRONT="${A[0]}"
+	DIR="${A[1]}"
+
+	[[ -z $DIR ]] && { echo "error: malformed URL -- $URL is missing a colon."; exit -1; }
+
+	HOST=$(sed -E 's#^[^@]+@(.*)$#\1#' <<< "$FRONT")
+else
+	IFS='/' read -ra A <<< "$URL"
+	
+	[[ ${#A[@]} == 2 ]] || { echo "error: malformed URL -- expected organization/repo_name."; exit -1; }
+	
+	DIR="$URL"
+	HOST="github.com"
+	URL="git@github.com:$DIR"
+fi
+
+# Construct destination directory, removing any .git extensions
+DIR="$PROJECTS/$HOST/$DIR"
+DIR="${DIR%.git}"
+
+# refuse to work if the dir already exists
+if [[ -e "$DIR" ]]; then
+	echo "error: $DIR already exists." 1>&2
+	exit -1;
+fi
+
+# create the destination directory and clone
+mkdir -p "$DIR"
+git clone "$URL" "$DIR"
