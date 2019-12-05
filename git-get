@@ -7,9 +7,16 @@
 PROJECTS="$HOME/projects"
 
 if [[ -z $1 ]]; then
-	echo "A universal go-get equivalent; git clone a repository into $PROJECTS."
-	echo "Usage: $(basename $0) <repository_url>" 1>&2
-	echo "Example: $(basename $0) git@github.com:mjuric/lsd" 1>&2
+	cat 1>&2 <<-EOF
+		A universal go-get equivalent; git clone a repository into $PROJECTS.
+		Usage:
+		    $(basename $0) <repository_url>
+		Examples:
+		    $(basename $0) git@github.com:mjuric/lsd
+		    $(basename $0) https://github.com/mjuric/lsd
+		    $(basename $0) mjuric/lsd
+		    $(basename $0) lsd
+	EOF
 	exit -1;
 fi
 
@@ -17,6 +24,7 @@ fi
 #   user@host.name:base/dir/reponame
 #   https://host.name/base/dir/reponame
 #   org/reponame (defaults to looking for it at git@github.com)
+#   reponame (if $PWD is in $PROJECTS/github.com/SOME_ORG/)
 URL="$1"
 if [[ $URL == "https://"* ]]; then
 	echo "H"
@@ -33,10 +41,24 @@ elif [[ $URL == *"@"* ]]; then
 	HOST=$(sed -E 's#^[^@]+@(.*)$#\1#' <<< "$FRONT")
 else
 	IFS='/' read -ra A <<< "$URL"
-	
-	[[ ${#A[@]} == 2 ]] || { echo "error: malformed URL -- expected organization/repo_name."; exit -1; }
-	
-	DIR="$URL"
+
+	if [[ ${#A[@]} == 1 ]]; then
+		# see if $PWD is in a subdirectory of $PROJECTS/org/
+		if [[ $PWD = $PROJECTS/github.com/* ]]; then
+			SUFFIX=${PWD#"$PROJECTS/"}
+			IFS='/' read -ra A <<< "$SUFFIX"
+			ORG="${A[1]}"
+
+			DIR="$ORG/$URL"
+		else
+			echo "error: to use the $(basename $0) syntax, you need to be in an org-level subdirectory of $PROJECTS.";
+			exit -1;
+		fi
+	else
+		[[ ${#A[@]} == 2 ]] || { echo "error: malformed URL -- expected organization/repo_name." 1>&2; exit -1; }
+
+		DIR="$URL"
+	fi
 	HOST="github.com"
 	URL="git@github.com:$DIR"
 fi
@@ -52,5 +74,5 @@ if [[ -e "$DIR" ]]; then
 fi
 
 # create the destination directory and clone
-mkdir -p "$DIR"
+mkdir -p "$(dirname DIR)"
 git clone "$URL" "$DIR"
