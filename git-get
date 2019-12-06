@@ -4,18 +4,24 @@
 # Similar to "go get"
 #
 
-PROJECTS="$HOME/projects"
+PROJECTS=${PROJECTS:-"$HOME/projects"}
 
 if [[ -z $1 ]]; then
 	cat 1>&2 <<-EOF
-		A universal go-get equivalent; git clone a repository into $PROJECTS.
+
+		git-get: git clone a repository into \$PROJECTS (default: $PROJECTS).
+
 		Usage:
-		    $(basename $0) <repository_url>
+		    git get <repository_url>
+
 		Examples:
-		    $(basename $0) git@github.com:mjuric/lsd
-		    $(basename $0) https://github.com/mjuric/lsd
-		    $(basename $0) mjuric/lsd
-		    $(basename $0) lsd
+		    git get git@github.com:mjuric/lsd
+		    git get https://github.com/mjuric/lsd
+		    git get mjuric/lsd
+		    git get lsd
+
+		Author:  Mario Juric <mjuric@astro.washington.edu>
+		License: MIT (https://opensource.org/licenses/MIT)
 	EOF
 	exit -1;
 fi
@@ -51,7 +57,7 @@ else
 
 			DIR="$ORG/$URL"
 		else
-			echo "error: to use the $(basename $0) syntax, you need to be in an org-level subdirectory of $PROJECTS.";
+			echo "error: to use the \`$(basename $0) repo\` syntax, you need to be in a subdirectory of $PROJECTS.";
 			exit -1;
 		fi
 	else
