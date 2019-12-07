@@ -33,12 +33,26 @@ if [[ $1 == "--eval" ]]; then
 	shift
 fi
 
-PROJECTS=${PROJECTS:-"$HOME/projects"}
+# source config file
+if [[ -f ~/.gitgetrc ]]; then
+	# possible values:
+	#   dir=<directory where to clone to>
+	#   org=<default github user or organization, if none specified>
+	. ~/.gitgetrc
+fi
+
+# compute $BASEDIR; default to $HOME/projects
+basedir=${dir:-"$HOME/projects"}
+BASEDIR=${DIR:-"$basedir"}
+
+# compute $ORG; default to current user's username
+org=${org:-"$USER"}
+ORG=${ORG:-"$org"}
 
 if [[ -z $1 ]]; then
 	cat 1>&2 <<-EOF
 
-		git-get: git clone a repository into \$PROJECTS (default: $PROJECTS).
+		git-get: git clone a repository into \$BASEDIR (default: $BASEDIR).
 
 		Usage:
 		    git get <repository_url>
@@ -59,7 +73,7 @@ fi
 #   user@host.name:base/dir/reponame
 #   https://host.name/base/dir/reponame
 #   org/reponame (defaults to looking for it at git@github.com)
-#   reponame (if $PWD is in $PROJECTS/github.com/SOME_ORG/)
+#   reponame (if $PWD is in $BASEDIR/github.com/SOME_ORG/)
 URL="$1"
 if [[ $URL == "https://"* ]]; then
 	echo "H"
@@ -78,17 +92,16 @@ else
 	IFS='/' read -ra A <<< "$URL"
 
 	if [[ ${#A[@]} == 1 ]]; then
-		# see if $PWD is in a subdirectory of $PROJECTS/org/
-		if [[ $PWD = $PROJECTS/github.com/* ]]; then
-			SUFFIX=${PWD#"$PROJECTS/"}
+		# see if $PWD is in a subdirectory of $BASEDIR/org/
+		if [[ $PWD = $BASEDIR/github.com/* ]]; then
+			SUFFIX=${PWD#"$BASEDIR/"}
 			IFS='/' read -ra A <<< "$SUFFIX"
-			ORG="${A[1]}"
-
-			DIR="$ORG/$URL"
+			DEST="${A[1]}"
 		else
-			echo "error: to use the \`$(basename $0) repo\` syntax, you need to be in a subdirectory of $PROJECTS.";
-			exit -1;
+			DEST="$ORG"
 		fi
+		echo $BASEDIR -- $DEST -- $URL 1>&2
+		DIR="$DEST/$URL"
 	else
 		[[ ${#A[@]} == 2 ]] || { echo "error: malformed URL -- expected organization/repo_name." 1>&2; exit -1; }
 
@@ -99,7 +112,7 @@ else
 fi
 
 # Construct destination directory, removing any .git extensions
-DIR="$PROJECTS/$HOST/$DIR"
+DIR="$BASEDIR/$HOST/$DIR"
 DIR="${DIR%.git}"
 
 if [[ -e "$DIR" ]]; then
