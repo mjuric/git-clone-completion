@@ -4,6 +4,35 @@
 # Similar to "go get"
 #
 
+# check if this script is being sourced; if so, set up the aliases and
+# exit. the user will most likely do this from their .bashrc or .bash_profile
+if [[ "${BASH_SOURCE[0]}" != "${0}" ]]; then
+	if [[ $1 != "--setup" ]]; then
+		echo "error: when sourcing call this script as \`source ${BASH_SOURCE[0]} --setup\`" 1>&2
+		return
+	fi
+	shift
+
+	git() {
+		# running git get?
+		if [[ "$1" == get ]]; then
+			shift
+			eval $(command git-get --eval "$@")
+		else
+			# delegate to git
+			command git "$@"
+		fi
+	}
+	return
+fi
+
+# parse cmdline options
+EVAL=
+if [[ $1 == "--eval" ]]; then
+	EVAL=1
+	shift
+fi
+
 PROJECTS=${PROJECTS:-"$HOME/projects"}
 
 if [[ -z $1 ]]; then
@@ -73,12 +102,10 @@ fi
 DIR="$PROJECTS/$HOST/$DIR"
 DIR="${DIR%.git}"
 
-# refuse to work if the dir already exists
 if [[ -e "$DIR" ]]; then
-	echo "error: $DIR already exists." 1>&2
-	exit -1;
+	[[ -n $EVAL ]] && echo "cd \"$DIR\""
+else
+	# create the destination directory and clone
+	mkdir -p "$(dirname DIR)"
+	git clone "$URL" "$DIR" && [[ -n $EVAL ]] && echo "cd \"$DIR\""
 fi
-
-# create the destination directory and clone
-mkdir -p "$(dirname DIR)"
-git clone "$URL" "$DIR"
