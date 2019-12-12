@@ -33,6 +33,12 @@ if [[ $1 == "--eval" ]]; then
 	shift
 fi
 
+NOCD=
+if [[ $1 == "--no-cd" || $1 == "--nocd" ]]; then
+	NOCD=1
+	shift
+fi
+
 # source config file
 if [[ -f ~/.gitgetrc ]]; then
 	# possible values:
@@ -76,11 +82,9 @@ fi
 #   reponame (if $PWD is in $BASEDIR/github.com/SOME_ORG/)
 URL="$1"
 if [[ $URL == "https://"* ]]; then
-	echo "H"
 	HOST=$(cut -d / -f 3 <<< "$URL")
 	DIR=$(cut -d / -f 4- <<< "$URL")
 elif [[ $URL == *"@"* ]]; then
-	echo "G"
 	IFS=':' read -ra A <<< "$URL"
 	FRONT="${A[0]}"
 	DIR="${A[1]}"
@@ -116,9 +120,9 @@ DIR="$BASEDIR/$HOST/$DIR"
 DIR="${DIR%.git}"
 
 if [[ -e "$DIR" ]]; then
-	[[ -n $EVAL ]] && echo "cd \"$DIR\""
+	[[ -n $EVAL && -z $NOCD ]] && echo "cd \"$DIR\""
 else
 	# create the destination directory and clone
 	mkdir -p "$(dirname DIR)"
-	git clone "$URL" "$DIR" && [[ -n $EVAL ]] && echo "cd \"$DIR\""
+	git clone "$URL" "$DIR" && [[ -n $EVAL && -z $NOCD ]] && echo "cd \"$DIR\""
 fi
