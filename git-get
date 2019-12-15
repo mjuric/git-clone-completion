@@ -93,8 +93,7 @@ DIR="${DIR%.git}"
 if [[ ! -e "$DIR" ]]; then
 	# create the destination directory and clone
 	mkdir -p "$(dirname DIR)"
-	git clone "$URL" "$DIR"
-	echo "cloned to $DIR"
+	git clone "$URL" "$DIR" && echo "cloned to $DIR"
 else
 	echo "already exists in $DIR"
 fi
