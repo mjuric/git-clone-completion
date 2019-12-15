@@ -10,12 +10,6 @@ AUTHFILE="$CFGDIR/github.auth.netrc"
 CFGFILE="$CFGDIR/config"
 
 # parse cmdline options
-EVAL=
-if [[ $1 == "--eval" ]]; then
-	EVAL=1
-	shift
-fi
-
 if [[ $1 == "--edit" ]]; then
 	${EDITOR:-vi} $0
 	exit
@@ -69,7 +63,7 @@ fi
 
 # compute $BASEDIR; default to $HOME/projects
 basedir=${dir:-"$HOME/projects"}
-BASEDIR=${DIR:-"$basedir"}
+BASEDIR=${PROJECTS:-"$basedir"}
 
 # compute $ORG; default to current user's username
 org=${org:-"$USER"}
