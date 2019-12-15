@@ -4,27 +4,10 @@
 # Similar to "go get"
 #
 
-# check if this script is being sourced; if so, set up the aliases and
-# exit. the user will most likely do this from their .bashrc or .bash_profile
-if [[ "${BASH_SOURCE[0]}" != "${0}" ]]; then
-	if [[ $1 != "--setup" ]]; then
-		echo "error: when sourcing call this script as \`source ${BASH_SOURCE[0]} --setup\`" 1>&2
-		return
-	fi
-	shift
-
-	git() {
-		# running git get?
-		if [[ "$1" == get ]]; then
-			shift
-			eval $(command git-get --eval "$@")
-		else
-			# delegate to git
-			command git "$@"
-		fi
-	}
-	return
-fi
+# configuration
+CFGDIR=${XDG_CONFIG_HOME:-$HOME/.config/git-get}
+AUTHFILE="$CFGDIR/github.auth.netrc"
+CFGFILE="$CFGDIR/config"
 
 # parse cmdline options
 EVAL=
@@ -33,10 +16,47 @@ if [[ $1 == "--eval" ]]; then
 	shift
 fi
 
-NOCD=
-if [[ $1 == "--no-cd" || $1 == "--nocd" ]]; then
-	NOCD=1
-	shift
+if [[ $1 == "--edit" ]]; then
+	${EDITOR:-vi} $0
+	exit
+fi
+
+if [[ $1 == "--init" ]]; then
+	# FIXME: password (see https://stackoverflow.com/a/27894407)
+	# curl --netrc-file my-password-file http://example.com
+	# machine <example.com> login <username> password <password>
+
+	echo "Logging into github so we can list repositories..."
+	echo "Please visit https://github.com/settings/tokens/new and generate a new personal access token:"
+	echo "  1. Under 'Note', write 'git-get access for $USER@$(hostname)'"
+	echo "  2. Under 'Select scopes', check 'repo:status' and leave otherwise unchecked."
+	echo "Then click the 'Generate Token' green button (bottom of the page)."
+	echo
+	echo "The PAT is equivalent to a password git-get can use to securely access your github account."
+	echo "Copy the newly generated token and paste it here."
+	echo ""
+	read -sp "Token (note: the typed characters won't show): " TOKEN; echo
+	read -p "Your GitHub username: " GHUSER
+
+	# securely store the token and user to a netrc-formatted file
+	mkdir -p "$(dirname $AUTHFILE)"
+	rm -f "$AUTHFILE"
+	touch "$AUTHFILE"
+	chmod 600 "$AUTHFILE"
+	# note: echo is a builtin so this is secure (https://stackoverflow.com/a/15229498)
+	echo "machine api.github.com login $GHUSER password $TOKEN" >> "$AUTHFILE"
+
+	# verify that the token works
+	if ! curl -I -f -s --netrc-file "$AUTHFILE" "https://api.github.com/user" >/dev/null; then
+		curl -s "https://api.github.com/user"
+		echo "Hmm, something went wrong -- most likely you've typed the token incorretly. Rerun and try again."
+		exit -1
+	else
+		echo
+		echo "Authentication setup complete; token stored to '$AUTHFILE'"
+	fi
+
+	exit
 fi
 
 # source config file
@@ -119,10 +139,11 @@ fi
 DIR="$BASEDIR/$HOST/$DIR"
 DIR="${DIR%.git}"
 
-if [[ -e "$DIR" ]]; then
-	[[ -n $EVAL && -z $NOCD ]] && echo "cd \"$DIR\""
-else
+if [[ ! -e "$DIR" ]]; then
 	# create the destination directory and clone
 	mkdir -p "$(dirname DIR)"
-	git clone "$URL" "$DIR" && [[ -n $EVAL && -z $NOCD ]] && echo "cd \"$DIR\""
+	git clone "$URL" "$DIR"
+	echo "cloned to $DIR"
+else
+	echo "already exists in $DIR"
 fi
