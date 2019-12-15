@@ -15,44 +15,6 @@ if [[ $1 == "--edit" ]]; then
 	exit
 fi
 
-if [[ $1 == "--init" ]]; then
-	# FIXME: password (see https://stackoverflow.com/a/27894407)
-	# curl --netrc-file my-password-file http://example.com
-	# machine <example.com> login <username> password <password>
-
-	echo "Logging into github so we can list repositories..."
-	echo "Please visit https://github.com/settings/tokens/new and generate a new personal access token:"
-	echo "  1. Under 'Note', write 'git-get access for $USER@$(hostname)'"
-	echo "  2. Under 'Select scopes', check 'repo:status' and leave otherwise unchecked."
-	echo "Then click the 'Generate Token' green button (bottom of the page)."
-	echo
-	echo "The PAT is equivalent to a password git-get can use to securely access your github account."
-	echo "Copy the newly generated token and paste it here."
-	echo ""
-	read -sp "Token (note: the typed characters won't show): " TOKEN; echo
-	read -p "Your GitHub username: " GHUSER
-
-	# securely store the token and user to a netrc-formatted file
-	mkdir -p "$(dirname $AUTHFILE)"
-	rm -f "$AUTHFILE"
-	touch "$AUTHFILE"
-	chmod 600 "$AUTHFILE"
-	# note: echo is a builtin so this is secure (https://stackoverflow.com/a/15229498)
-	echo "machine api.github.com login $GHUSER password $TOKEN" >> "$AUTHFILE"
-
-	# verify that the token works
-	if ! curl -I -f -s --netrc-file "$AUTHFILE" "https://api.github.com/user" >/dev/null; then
-		curl -s "https://api.github.com/user"
-		echo "Hmm, something went wrong -- most likely you've typed the token incorretly. Rerun and try again."
-		exit -1
-	else
-		echo
-		echo "Authentication setup complete; token stored to '$AUTHFILE'"
-	fi
-
-	exit
-fi
-
 # source config file
 if [[ -f ~/.gitgetrc ]]; then
 	# possible values:

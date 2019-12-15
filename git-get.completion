@@ -5,6 +5,45 @@
 # This script can be used as standalone, or can complement the one that ships with git.
 #
 
+# configuration
+GG_CFGDIR=${XDG_CONFIG_HOME:-$HOME/.config/git-get}
+GG_AUTHFILE="$GG_CFGDIR/github.auth.netrc"
+
+git-get-login()
+{
+	# acquire credentials
+	echo "Logging into github so we can list repositories..."
+	echo "Please visit https://github.com/settings/tokens/new and generate a new personal access token:"
+	echo "  1. Under 'Note', write 'git-get access for $USER@$(hostname)'"
+	echo "  2. Under 'Select scopes', check 'repo:status' and leave otherwise unchecked."
+	echo "Then click the 'Generate Token' green button (bottom of the page)."
+	echo
+	echo "The PAT is equivalent to a password git-get can use to securely access your github account."
+	echo "Copy the newly generated token and paste it here."
+	echo ""
+	read -sp "Token (note: the typed characters won't show): " TOKEN; echo
+	read -p "Your GitHub username: " GHUSER
+
+	# securely store the token and user to a netrc-formatted file
+	mkdir -p "$(dirname $GG_AUTHFILE)"
+	rm -f "$GG_AUTHFILE"
+	touch "$GG_AUTHFILE"
+	chmod 600 "$GG_AUTHFILE"
+	# note: echo is a builtin so this is secure (https://stackoverflow.com/a/15229498)
+	echo "machine api.github.com login $GHUSER password $TOKEN" >> "$GG_AUTHFILE"
+
+	# verify that the token works
+	if ! curl -I -f -s --netrc-file "$GG_AUTHFILE" "https://api.github.com/user" >/dev/null; then
+		curl -s "https://api.github.com/user"
+		echo "Hmm, something went wrong -- most likely you've typed the token incorretly. Rerun and try again."
+		exit -1
+	else
+		echo
+		echo "Authentication setup complete; token stored to '$GG_AUTHFILE'"
+	fi
+}
+
+
 # _refresh_repo_cache <org> <dest_cache_fn>
 _refresh_repo_cache()
 {
@@ -16,11 +55,8 @@ _refresh_repo_cache()
 	fi
 	touch "$CACHE"
 
-	local CFGDIR=${XDG_CONFIG_HOME:-$HOME/.config/git-get}
-	local AUTHFILE="$CFGDIR/github.auth.netrc"
-
 	# extract the number of pages
-	PAGES=$(curl -I -f -s --netrc-file "$AUTHFILE" "https://api.github.com/users/$ORG/repos?page=1&per_page=1000" | 
+	PAGES=$(curl -I -f -s --netrc-file "$GG_AUTHFILE" "https://api.github.com/users/$ORG/repos?page=1&per_page=1000" | 
 		sed -En 's/^Link: (.*)/\1/p' |tr ',' '\n' | grep 'rel="last"' |
 		sed -nE 's/^.*[?&]page=([0-9]+).*/\1/p')
 
@@ -28,7 +64,7 @@ _refresh_repo_cache()
 	mkdir -p $(dirname "$CACHE")
 	local TMP="$CACHE.$$.$RANDOM.tmp"
 	for page in $(seq 1 $PAGES); do
-		curl -f -s --netrc-file "$AUTHFILE" "https://api.github.com/users/$ORG/repos?page=$page&per_page=1000" >> "$TMP"
+		curl -f -s --netrc-file "$GG_AUTHFILE" "https://api.github.com/users/$ORG/repos?page=$page&per_page=1000" >> "$TMP"
 	done
 
 	# extract repository names and store into the cache
@@ -134,9 +170,16 @@ _git_get()
 		ORG=${arr[0]}
 		REPO=${arr[1]}
 
-		_get_repo_list "$ORG"
-		WORDS=( "${REPOS[@]/#/$ORG/}" )		# prepend the org name
-		WORDS=( "${WORDS[@]/%/ }" )		# append a space (so the suggestion completes the argument)
+		if [[ -f "$GG_AUTHFILE" ]]; then
+			_get_repo_list "$ORG"
+			WORDS=( "${REPOS[@]/#/$ORG/}" )		# prepend the org name
+			WORDS=( "${WORDS[@]/%/ }" )		# append a space (so the suggestion completes the argument)
+		else
+			# short-circuit if we haven't authenticated, with
+			# a helpful message
+			COMPREPLY=("Error: run \`git-get-login\` to activate repository completion." "completion currently disabled.")
+			return
+		fi
 	fi
 
 	# only return completions matching the typed prefix
@@ -150,6 +193,11 @@ _git_get()
 #
 # Install completions
 #
+
+if [[ ! -f "$GG_AUTHFILE" ]]; then
+	echo "warning: *** git-get completion disabled because you need to log in first ***"
+	echo "warning: *** run 'git-gen-login' for a quick one-time setip               ***"
+fi
 
 # If there's no git completion, at least install completion for our subcommand
 if ! declare -F _git > /dev/null; then
