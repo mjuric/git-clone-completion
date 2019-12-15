@@ -45,19 +45,14 @@ _get_repo_list()
 	local CACHEDIR=${XDG_CACHE_HOME:-$HOME/.cache/git-get}
 	local CACHE="$CACHEDIR/repos.cache.$1"
 
-	local w=0
-	[[ ! -f "$CACHE" ]] && w=30
-
-	# fire off a background update
-	( _refresh_repo_cache $1 $CACHE & )
-
-	# if the list has never been downloaded, wait a few seconds to give
-	# the background update a chance to create it. this makes for a better
-	# user experience.
-	while [[ $w -gt 0 && ! -s "$CACHE" ]]; do
-		sleep 0.1
-		w=$((w - 1))
-	done
+	if [[ ! -f "$CACHE" ]]; then
+		# this is the first time we're asking for the list of repos
+		# in this organization; do it synchronously
+		_refresh_repo_cache $1 $CACHE
+	else
+		# return what we have and fire off a background update
+		( _refresh_repo_cache $1 $CACHE & )
+	fi
 
 	# return the list of repos
 	REPOS=( $( cat "$CACHE" 2>/dev/null ) )
