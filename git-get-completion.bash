@@ -53,6 +53,7 @@ _refresh_repo_cache()
 	if [[ -n $(find "$CACHE" -newermt '-15 seconds' 2>/dev/null) ]]; then
 		return
 	fi
+	mkdir -p $(dirname "$CACHE")
 	touch "$CACHE"
 
 	# extract the number of pages
@@ -61,7 +62,6 @@ _refresh_repo_cache()
 		sed -nE 's/^.*[?&]page=([0-9]+).*/\1/p')
 
 	# fetch all pages to tmpfile and atomically replace the current cache (if any)
-	mkdir -p $(dirname "$CACHE")
 	local TMP="$CACHE.$$.$RANDOM.tmp"
 	for page in $(seq 1 $PAGES); do
 		curl -f -s --netrc-file "$GG_AUTHFILE" "https://api.github.com/users/$ORG/repos?page=$page&per_page=1000" >> "$TMP"
