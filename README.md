@@ -4,6 +4,8 @@ Clone a remote git repository to a predefined local location (`~/projects`,
 by default), with bash autocompletion for github.com (it will auto-complete
 a URL to repositories present in the typed organization).
 
+![git-get gif](http://research.majuric.org/media/git-get.gif)
+
 ## Usage
 
 ```
