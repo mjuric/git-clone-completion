@@ -41,7 +41,7 @@ git clone https://github.com/mjuric/git-get
 cd git-get
 
 echo "## git-get setup"               >> ~/.bash_profile
-echo "export PATH="$PWD:\$PATH"       >> ~/.bash_profile
+echo "export PATH=\"$PWD:\$PATH\""    >> ~/.bash_profile
 echo "source git-get-completion.bash" >> ~/.bash_profile
 
 source git-get-completion.bash
