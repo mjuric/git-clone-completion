@@ -7,14 +7,14 @@
 # source config file
 if [[ -f ~/.gitgetrc ]]; then
 	# possible values:
-	#   dir=<directory where to clone to>
-	#   org=<default github user or organization, if none specified>
+	#   projects=<directory where to clone to, current if unspecified>
+	#   org=<default github user or organization, $USER if unspecified>
 	. ~/.gitgetrc
 fi
 
-# compute $BASEDIR; default to $HOME/projects
-basedir=${dir:-"$HOME/projects"}
-BASEDIR=${PROJECTS:-"$basedir"}
+# compute $PROJECTS; default to $HOME/projects
+projects=${projects:-"$HOME/projects"}
+PROJECTS=${PROJECTS:-"$projects"}
 
 # compute $ORG; default to current user's username
 org=${org:-"$USER"}
@@ -24,7 +24,7 @@ usage()
 {
 	cat 1>&2 <<-EOF
 
-		git-get: git clone a repository into \$PROJECTS (default: $BASEDIR).
+		git-get: git clone a repository into \$PROJECTS (default: $PROJECTS).
 
 		Usage:
 		    git get [-h|--help] <repository_url>
@@ -50,7 +50,7 @@ fi
 #   user@host.name:base/dir/reponame
 #   https://host.name/base/dir/reponame
 #   org/reponame (defaults to looking for it at git@github.com)
-#   reponame (if $PWD is in $BASEDIR/github.com/SOME_ORG/)
+#   reponame (if $PWD is in $PROJECTS/github.com/SOME_ORG/)
 URL="$1"
 if [[ $URL == "https://"* ]]; then
 	HOST=$(cut -d / -f 3 <<< "$URL")
@@ -67,15 +67,14 @@ else
 	IFS='/' read -ra A <<< "$URL"
 
 	if [[ ${#A[@]} == 1 ]]; then
-		# see if $PWD is in a subdirectory of $BASEDIR/org/
-		if [[ $PWD = $BASEDIR/github.com/* ]]; then
-			SUFFIX=${PWD#"$BASEDIR/"}
+		# see if $PWD is in a subdirectory of $PROJECTS/org/
+		if [[ $PWD = $PROJECTS/github.com/* ]]; then
+			SUFFIX=${PWD#"$PROJECTS/"}
 			IFS='/' read -ra A <<< "$SUFFIX"
 			DEST="${A[1]}"
 		else
 			DEST="$ORG"
 		fi
-		echo $BASEDIR -- $DEST -- $URL 1>&2
 		DIR="$DEST/$URL"
 	else
 		[[ ${#A[@]} == 2 ]] || { echo "error: malformed URL -- expected organization/repo_name." 1>&2; exit -1; }
@@ -87,7 +86,7 @@ else
 fi
 
 # Construct destination directory, removing any .git extensions
-DIR="$BASEDIR/$HOST/$DIR"
+DIR="$PROJECTS/$HOST/$DIR"
 DIR="${DIR%.git}"
 
 if [[ ! -e "$DIR" ]]; then

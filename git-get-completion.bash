@@ -13,9 +13,15 @@ git-get-login()
 {
 	# acquire credentials
 	echo "Logging into github so we can list repositories..."
-	echo "Please visit https://github.com/settings/tokens/new and generate a new personal access token:"
-	echo "  1. Under 'Note', write 'git-get access for $USER@$(hostname)'"
-	echo "  2. Under 'Select scopes', check 'repo:status' and leave otherwise unchecked."
+	echo "Please visit:"
+	echo
+	echo "    https://github.com/settings/tokens/new"
+	echo
+	echo "and generate a new personal access token:"
+	echo
+	echo "    1. Under 'Note', write 'git-get access for $USER@$(hostname)'"
+	echo "    2. Under 'Select scopes', check 'repo:status' and leave otherwise unchecked."
+	echo
 	echo "Then click the 'Generate Token' green button (bottom of the page)."
 	echo
 	echo "The PAT is equivalent to a password git-get can use to securely access your github account."
