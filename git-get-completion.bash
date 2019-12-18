@@ -100,34 +100,34 @@ _get_repo_list()
 	REPOS=( $( cat "$CACHE" 2>/dev/null ) )
 }
 
-_complete_url()
+# arg(s):
+#    URL base (e.g., https://github.com/ or git@github.com:)
+#    The (partial) 'org/repo' github URL fragment
+# returns:
+#    if -z $ERR, org/repo fragment completions in COMPREPLY
+#    if -n $ERR, a message on what went wrong in COMPREPLY
+_complete_github_fragment()
 {
-	URL="$1"
-
-	# URLs beginning with . are local -- let the normal bash autocompletion deal with them
-	[[ $URL == .* ]] && return
-
-	# Allow fully qualified http[s]://github.com/org/repo and git@github.com:org/repo forms
-	if [[ $URL == "https://github.com/"* || $URL == "http://github.com/"* ]]; then
-		URL=$(cut -d / -f 4- <<< "$URL")
-	elif [[ $URL == "git@github.com:"* ]]; then
-		IFS=':' read -ra A <<< "$URL"
-		URL="${A[1]}"
-	fi
+	local urlbase="$1"
+	local URL="$2"
 
 	# if more than one '/' character. this is not a valid github URL; stop.
-	[[ $URL == */*/* ]] && return
+	[[ $URL == */*/* ]] && return -1
 
-	# see if we're completing the org, or the repo part
+	# are we're completing the org or the repo part?
 	if [[ $URL != */* ]]; then
+		#
 		# completing the org: show a list of already cloned orgs
+		#
 		local PROJECTS="${PROJECTS:-$HOME/projects}"
 		PROJECTS="$PROJECTS/github.com"
 
 		WORDS=( $(ls "$PROJECTS") )
 		WORDS=( "${WORDS[@]/%//}" )
 	else
+		#
 		# completing the repo: offer a list of repos available on github
+		#
 		IFS='/' read -ra arr <<< "$URL"
 		ORG=${arr[0]}
 		REPO=${arr[1]}
@@ -150,7 +150,40 @@ _complete_url()
 			COMPREPLY+=("${WORDS[i]}")
 		fi
 	done
+
+	# user-friendly completions and colon handling
+	compreply=( ${COMPREPLY[@]} )			# this is to be shown to the user
+	COMPREPLY=("${COMPREPLY[@]/#/$urlbase}")
+	__ltrim_colon_completions "$cur"		# these are the actual completions
+	_fancy_autocomplete
 }
+
+# test if we're completing a fully qualified GitHub URL, complete it
+# if so, return -1 otherwise.
+#
+# args:  $cur
+#        <...> additional prefixes to compare to; pass "" to compare just the fragment
+#
+_complete_github_url()
+{
+	local cur="$1"
+	shift
+
+	local urlbase=
+	for urlbase in "https://github.com/" "http://github.com/" "git@github.com:" "$@"; do
+		[[ $cur != "$urlbase"* ]] && continue
+
+		_complete_github_fragment "$urlbase" "${cur#"$urlbase"}"
+		return
+	done
+
+	return -1
+}
+
+###############################################################
+#
+# Utilities
+#
 
 # If COMP_CWORD is a positional argument, set $argidx to its index
 # ignoring any options that may have been specified before it.
@@ -197,6 +230,78 @@ __arg_index()
 	[[ $o == 0 ]] && argidx=$idx || argidx=
 }
 
+# find and echo the common prefix of passed arguments
+# inspired by https://stackoverflow.com/a/28647824
+_common_prefix()
+{
+	[[ $# -eq 0 ]] && return 0
+
+	local first prefix v
+	first="$1"
+	shift
+	for ((i = 0; i < ${#first}; ++i)); do
+		prefix=${first:0:i+1}
+		for v; do
+			if [[ ${v:0:i+1} != "$prefix" ]]; then
+				echo "${first:0:i}"
+				return
+			fi
+		done
+	done
+
+	echo "$first"
+}
+
+# adapted from https://github.com/torvalds/linux/blob/master/tools/perf/perf-completion.sh#L97
+__ltrim_colon_completions()
+{
+    if [[ "$1" == *:* && "$COMP_WORDBREAKS" == *:* ]]; then
+        # Remove colon-word prefix from COMPREPLY items
+        local colon_word=${1%"${1##*:}"}  # "
+        local i=${#COMPREPLY[*]}
+        while [[ $((--i)) -ge 0 ]]; do
+            COMPREPLY[$i]=${COMPREPLY[$i]#"$colon_word"}
+        done
+    fi
+}
+
+# complete words with colons
+_fancy_autocomplete()
+{
+	# assumes the human-readable suggestions are in $compreply[]
+	# assumes the completions are in $COMPREPLY[]
+	# assumes the currently typed word is in $cur (with colons and all)
+
+	# a single or no completions: bash will autocomplete
+	[[ ${#COMPREPLY[@]} -le 1 ]] && return
+
+	# check if the completions share a common prefix, and if
+	# that prefix is longer than what's been typed so far. if so,
+	# bash will autocomplete up to that prefix and not show the
+	# suggestions (so send it the autocompletion text).
+	local prefix=$(_common_prefix "${COMPREPLY[@]}")
+	[[ "$prefix" != "${cur#*:}" ]] && return
+
+	# Not possible to autocomplete beyond what's currently been
+	# typed, so bash will show suggestions. Send the human-readable
+	# form.
+	#
+	# Note: the appended character is the UTF-8 non-breaking space,
+	# which sorts to the end.  It's needed to prevent bash from trying
+	# to autocomplete a common prefix in the human-readable options, if
+	# any.
+	COMPREPLY=("${compreply[@]}" " ")
+}
+
+_colon_autocomplete()
+{
+	# save the human form
+	compreply=("${COMPREPLY[@]}")
+	__ltrim_colon_completions "$cur"
+	_fancy_autocomplete
+}
+
+
 ############
 
 # _git_clone enhancements
@@ -212,7 +317,7 @@ else
 	# no git autocompletions; add shims and declare autocompletion
 	__git() { git "$@"; }
 	_git_clone_without_get() { : ; }
-	
+
 	TODO: declare autocompletion
 fi
 
@@ -223,47 +328,42 @@ _git_clone()
 	_git_clone_without_get
 	[[ ${#COMPREPLY[@]} -gt 0 ]] && return
 
-	# stop if we're completing an option
-	[[ $cur == -* ]] && return
-
-	# stop if we're completing an option's argument (e.g., '--config cfgfile')
-	local argopts=$(__git clone --git-completion-helper)
-	echo "$argopts" | grep -qw -- "$prev=" && return
-
 	# see if we're completing the second positional argument ('git clone <URL>')
-	__arg_index "$argopts"
+	__arg_index $(__git clone --git-completion-helper)
 	[[ $argidx -ne 2 ]] && return
 
-	# attempt URL completion
-#	echo $'\n'"HERE! cur='$cur' COMP_CWORD=$COMP_CWORD argidx=$argidx"$'\n'
-	_complete_url "$cur"
+	# Try to complete service URLs
+	_complete_github_url "$cur" && return
+
+	# Begin autocompleting towards a fully qualified http[s]://github.com/org/repo and git@github.com:org/repo forms
+	COMPREPLY=($(compgen -W "https://github.com/ https://github.cox.com/ git@github.com:" "$cur"))
+	_colon_autocomplete
 }
 
 # git's autocompletion scripts will automatically invoke _git_get() for 'get' subcommand
 _git_get()
 {
-	# see if we're completing the positional argument corresponding to the URL
+	# see if we're completing the apropriate positional argument
+	__arg_index $(__git clone --git-completion-helper)
+
 	local prog=$(basename ${COMP_WORDS[0]})
 	local cur="${COMP_WORDS[COMP_CWORD]}"
 
-	__arg_index
-
 	# 'git-get <URL>'
-	[[ $prog == "git-get" && $argidx -eq 1 ]] && { _complete_url "$cur"; return; }
+	[[ $prog == "git-get" && $argidx -eq 1 ]] && { _complete_github_url "$cur" ""; return; }
 
-	# ('git get <URL>' or 'git-get <URL>')
-	[[ $argidx -eq 2 ]] && { _complete_url "$cur"; return; }
+	# 'git get <URL>'
+	[[ $prog != "git-get" && $argidx -eq 2 ]] && { _complete_github_url "$cur" ""; return; }
 }
 
 ############
-
 #
 # Install completions
 #
 
 if [[ ! -f "$GG_AUTHFILE" ]]; then
 	echo "warning: *** git-get completion disabled because you need to log in first ***"
-	echo "warning: *** run 'git-gen-login' for a quick one-time setip               ***"
+	echo "warning: *** run 'git-get-login' for a quick one-time setip               ***"
 fi
 
 # If there's no git completion, at least install completion for our subcommand
@@ -289,7 +389,7 @@ _git_get_unit_test()
 	for cmd in "git-get" "git get"; do
 		for opts in "" "-s --long"; do
 			# test succesful completions
-			COMPREPLY_TRUE=( "mjuric/lsd " "mjuric/lsd-setup " )
+			COMPREPLY_TRUE=( "mjuric/lsd" "mjuric/lsd-setup" " ")
 			for url in "mjuric/lsd" "git@github.com:mjuric/lsd" "https://github.com/mjuric/lsd" "http://github.com/mjuric/lsd"; do
 				COMPREPLY=()
 				COMP_WORDS=($cmd $opts $url)
