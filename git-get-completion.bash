@@ -9,7 +9,7 @@
 GG_CFGDIR=${XDG_CONFIG_HOME:-$HOME/.config/git-get}
 GG_AUTHFILE="$GG_CFGDIR/github.auth.netrc"
 
-git-get-login()
+init-github-completion()
 {
 	# acquire credentials
 	echo "Logging into github so we can list repositories..."
@@ -122,7 +122,7 @@ _complete_github_fragment()
 		local PROJECTS="${PROJECTS:-$HOME/projects}"
 		PROJECTS="$PROJECTS/github.com"
 
-		WORDS=( $(ls "$PROJECTS") )
+		WORDS=( $(ls "$PROJECTS" 2>/dev/null) )
 		WORDS=( "${WORDS[@]/%//}" )
 	else
 		#
@@ -139,7 +139,7 @@ _complete_github_fragment()
 		else
 			# short-circuit if we haven't authenticated, with
 			# a helpful message
-			COMPREPLY=("Error: run \`git-get-login\` to activate repository completion." "completion currently disabled.")
+			COMPREPLY=("Error: run \`init-github-completion\` to activate repository completion." "completion currently disabled.")
 			return
 		fi
 	fi
@@ -209,6 +209,9 @@ _complete_github_url()
 #
 __arg_index()
 {
+	# returned list of positional arguments
+	posargs=( ${COMP_WORDS[0]} )
+
 	local c p i idx=0
 	for i in $(seq 1 $COMP_CWORD); do
 		p=${COMP_WORDS[i-1]}	# previous word
@@ -224,6 +227,7 @@ __arg_index()
 		# a positional argument
 		o=0
 		idx=$((idx+1))
+		posargs+=($c)
 	done
 
 	# set $argidx only if the current word was an argument
@@ -318,7 +322,19 @@ else
 	__git() { git "$@"; }
 	_git_clone_without_get() { : ; }
 
-	TODO: declare autocompletion
+	_git()
+	{
+		local cur="${COMP_WORDS[COMP_CWORD]}"
+
+		# check that the second positional arg is 'clone'
+		__arg_index -C= -c= --exec-path= --git-dir= --work-tree= --namespace=
+
+		[[ ${posargs[1]} == "clone" ]] && _git_clone && return
+		[[ ${posargs[1]} == "get" ]] && _git_get && return
+	}
+
+	# Enable completion for git()
+	complete -o bashdefault -o default -o nospace -F _git git 2>/dev/null || complete -o default -o nospace -F _git git
 fi
 
 # redefine _git_clone to auto-complete the first positional argument
@@ -336,7 +352,7 @@ _git_clone()
 	_complete_github_url "$cur" && return
 
 	# Begin autocompleting towards a fully qualified http[s]://github.com/org/repo and git@github.com:org/repo forms
-	COMPREPLY=($(compgen -W "https://github.com/ https://github.cox.com/ git@github.com:" "$cur"))
+	COMPREPLY=($(compgen -W "https://github.com/ git@github.com:" "$cur"))
 	_colon_autocomplete
 }
 
@@ -363,7 +379,7 @@ _git_get()
 
 if [[ ! -f "$GG_AUTHFILE" ]]; then
 	echo "warning: *** git-get completion disabled because you need to log in first ***"
-	echo "warning: *** run 'git-get-login' for a quick one-time setip               ***"
+	echo "warning: *** run 'init-github-completion' for a quick one-time setup.     ***"
 fi
 
 # If there's no git completion, at least install completion for our subcommand
