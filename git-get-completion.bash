@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# git-get autocompletion script
+# git-clone autocompletion script
 #
 # This script can be used as standalone, or can complement the one that ships with git.
 #
@@ -132,16 +132,21 @@ _complete_github_fragment()
 		ORG=${arr[0]}
 		REPO=${arr[1]}
 
-		if [[ -f "$GG_AUTHFILE" ]]; then
-			_get_repo_list "$ORG"
-			WORDS=( "${REPOS[@]/#/$ORG/}" )		# prepend the org name
-			WORDS=( "${WORDS[@]/%/ }" )		# append a space (so the suggestion completes the argument)
-		else
+		if [[ ! -f "$GG_AUTHFILE" ]]; then
 			# short-circuit if we haven't authenticated, with
 			# a helpful message
 			COMPREPLY=("Error: run \`init-github-completion\` to activate repository completion." "completion currently disabled.")
 			return
+		elif ! hash jq 2>/dev/null; then
+			# short-circuit if we haven't authenticated, with
+			# a helpful message
+			COMPREPLY=("Error: need the \`jq\` utility for git clone completion." "see https://stedolan.github.io/jq/ or your package manager")
+			return
 		fi
+
+		_get_repo_list "$ORG"
+		WORDS=( "${REPOS[@]/#/$ORG/}" )		# prepend the org name
+		WORDS=( "${WORDS[@]/%/ }" )		# append a space (so the suggestion completes the argument)
 	fi
 
 	# only return completions matching the typed prefix
@@ -378,8 +383,14 @@ _git_get()
 #
 
 if [[ ! -f "$GG_AUTHFILE" ]]; then
-	echo "warning: *** git-get completion disabled because you need to log in first ***"
-	echo "warning: *** run 'init-github-completion' for a quick one-time setup.     ***"
+	echo "warning: *** git clone completion disabled because you need to log in first ***"
+	echo "warning: *** run 'init-github-completion' for a quick one-time setup.       ***"
+fi
+
+if ! hash jq 2>/dev/null; then
+	echo "warning: *** git clone completion disabled because you're missing 'jq'  ***"
+	echo "warning: *** if using brew, run:   \`brew install jq\`                    ***"
+	echo "warning: *** if using conda, run:  \`conda install jq\`                   ***"
 fi
 
 # If there's no git completion, at least install completion for our subcommand
