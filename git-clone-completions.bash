@@ -542,8 +542,12 @@ fi
 if ! hash jq 2>/dev/null; then
 	[[ _msg -ne 1 ]] && echo
 	echo "error $_msg: *** git clone completion disabled because you're missing 'jq'  ***" 1>&2
-	echo "error $_msg: *** if using brew, run:   \`brew install jq\`                    ***" 1>&2
-	echo "error $_msg: *** if using conda, run:  \`conda install jq\`                   ***" 1>&2
+	echo "error $_msg: ***   if using brew, run:   \`brew install jq\`                  ***" 1>&2
+	echo "error $_msg: ***   if using conda, run:  \`conda install jq\`                 ***" 1>&2
+	echo "error $_msg: ***   on Ubuntu, run:       \`sudo apt-get install jq\`          ***" 1>&2
+	echo "error $_msg: ***   on Fedora, run:       \`sudo dnf install jq\`              ***" 1>&2
+	echo "error $_msg: *** or download a pre-built binary from:                       ***" 1>&2
+	echo "error $_msg: ***   https://stedolan.github.io/jq/download/                  ***" 1>&2
 	let _msg++
 fi
 
