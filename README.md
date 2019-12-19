@@ -1,9 +1,9 @@
-# git-clone-completions: GitHub autocompletion for `git clone` (and more)
+# GitHub autocompletion for `git clone` (and more)
 
 A `bash` autocompletion script adding autocompletion of GitHub organizations
 and repositories.
 
-![autocompletion gif](http://research.majuric.org/media/git-clone-completions.gif)
+![autocompletion gif](http://research.majuric.org/media/git-clone-completions-2.gif)
 
 ## Usage
 
