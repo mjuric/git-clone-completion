@@ -297,6 +297,8 @@ _colon_autocomplete()
 
 # configuration
 GG_CFGDIR=${XDG_CONFIG_HOME:-$HOME/.config/git-clone-completions}
+GG_CACHEDIR=${XDG_CACHE_HOME:-$HOME/.cache/git-clone-completions}
+
 GG_AUTHFILE="$GG_CFGDIR/github.auth.netrc"
 
 #
@@ -377,14 +379,13 @@ _refresh_repo_cache()
 }
 
 # get list of repositories from organization $1
-# cache the list in $CACHEDIR/github.com.$1.cache"
+# cache the list in $GG_CACHEDIR/github.com.$1.cache"
 #
 # author: mjuric@astro.washington.edu
 #
 _get_repo_list()
 {
-	local CACHEDIR=${XDG_CACHE_HOME:-$HOME/.cache/git-clone-completions}
-	local CACHE="$CACHEDIR/github.com.$1.cache"
+	local CACHE="$GG_CACHEDIR/github.com.$1.cache"
 
 	# fire off a background cache update if the cache is stale or non-existant
 	if [[ -z $(find "$CACHE" -newermt '-15 seconds' 2>/dev/null) ]]; then
@@ -521,6 +522,105 @@ _complete_github_url()
 
 	return 1
 }
+
+#################
+#               #
+# Update checks #
+#               #
+#################
+
+GG_NO_UPDATE_MARKER="$GG_CFGDIR/no-update-checks"
+GG_NEW_VERSION="$GG_CACHEDIR/git-clone-completions.bash"
+GG_SELF="${BASH_SOURCE[0]}"
+#GG_UPDATE_CHECK_INTERVAL='-1 weeks'
+#GG_UPDATE_NAG_INTERVAL='-1 weeks'
+GG_UPDATE_CHECK_INTERVAL='-30 seconds'
+GG_UPDATE_NAG_INTERVAL='-2 minutes'
+
+__check_and_download_update()
+{
+	# don't check if we've checked within the last week
+	if [[ -n $(find "$GG_NEW_VERSION" -newermt "$GG_UPDATE_CHECK_INTERVAL" 2>/dev/null) ]]; then
+		return
+	fi
+
+	# to avoid having multiple instances downloading the same file
+	mkdir -p $(dirname "$GG_NEW_VERSION")
+	touch "$GG_NEW_VERSION"
+
+	# download the current version
+	local tmp="$GG_NEW_VERSION.$$.$RANDOM.tmp"
+
+	if curl -f -s "https://raw.githubusercontent.com/mjuric/git-utils/master/git-clone-completions.bash" -o "$tmp" >/dev/null 1>&2 &&	# download
+	   [[ -s "$tmp" ]] &&				# continue if not empty
+	   ! cmp -s "$GG_SELF" "$tmp" 2>/dev/null &&	# continue if not the same
+	   bash -n "$tmp" 2>/dev/null;			# continue if not malformed
+	then
+		# we have a new update ready to install!
+		mv "$tmp" "$GG_NEW_VERSION"
+	else
+		rm -f "$tmp"
+	fi
+}
+
+gg-update()
+{
+	if [[ ! -f "$GG_NEW_VERSION" ]]; then
+		echo "git-clone-completions: no new version available for update." 1>&2
+		return
+	fi
+
+	# save a backup
+	local backup="$GG_CACHEDIR/git-clone-completions.bash.$(date)"
+	cp -a "$GG_SELF" "$backup"
+
+	echo
+	echo "saved the current version to:"
+	echo "    $backup"
+	echo
+
+	# replace self with the new version
+	echo "Now run: "
+	echo
+	echo "   mv '$GG_NEW_VERSION' '$GG_SELF'"
+	echo
+	echo "to update."
+	#echo "git-clone-completions: update complete! source $SELF to activate."
+}
+
+gg-stop()
+{
+	rm -f "$GG_NEW_VERSION"
+
+	mkdir -p $(dirname "$GG_NO_UPDATE_MARKER")
+	touch "$GG_NO_UPDATE_MARKER"
+
+	echo "git-clone-completions: won't check for updates going forward."
+}
+
+__check_update()
+{
+	# don't check if the user told us not to
+	[[ -f $GG_NO_UPDATE_MARKER ]] && return
+
+	# asynchronously check for updates
+	( __check_and_download_update & )
+
+	# if an update is ready to be installed, let the user know (but don't nag too much)
+	nagfile="$GG_CACHEDIR/last_update_nag"
+	if [[
+	      -s "$GG_NEW_VERSION" &&
+	      -z $(find "$nagfile" -newermt "$GG_UPDATE_NAG_INTERVAL" 2>/dev/null)
+	]]; then
+		mkdir -p $(basename "$nagfile")
+		touch "$nagfile"
+
+		echo "message: new git-clone-completions available; run gg-update to update. run gg-stop to stop update checks." 1>&2
+	fi
+}
+
+# Enable for everyone once we're happy with how well this works
+: __check_update
 
 #######################
 #                     #
