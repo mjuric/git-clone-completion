@@ -531,16 +531,20 @@ _complete_github_url()
 #
 # This block must come _before_ redefining _git_clone (and possibly other functions)
 #
+_msg=1
 
 if [[ ! -f "$GG_AUTHFILE" ]]; then
-	echo "warning: *** GitHub clone completion disabled because you need to log in. ***" 1>&2
-	echo "warning: *** run 'init-github-completion' for a quick one-time setup.     ***" 1>&2
+	echo "error $_msg: *** GitHub clone completion disabled because you need to log in. ***" 1>&2
+	echo "error $_msg: *** run 'init-github-completion' for a quick one-time setup.     ***" 1>&2
+	let _msg++
 fi
 
 if ! hash jq 2>/dev/null; then
-	echo "warning: *** git clone completion disabled because you're missing 'jq'  ***" 1>&2
-	echo "warning: *** if using brew, run:   \`brew install jq\`                    ***" 1>&2
-	echo "warning: *** if using conda, run:  \`conda install jq\`                   ***" 1>&2
+	[[ _msg -ne 1 ]] && echo
+	echo "error $_msg: *** git clone completion disabled because you're missing 'jq'  ***" 1>&2
+	echo "error $_msg: *** if using brew, run:   \`brew install jq\`                    ***" 1>&2
+	echo "error $_msg: *** if using conda, run:  \`conda install jq\`                   ***" 1>&2
+	let _msg++
 fi
 
 # Enable completion for:
@@ -555,10 +559,12 @@ if declare -F _git > /dev/null; then
 		eval "$(declare -f _git_clone | sed 's/_git_clone/_mj_git_clone_orig/')"
 	fi
 else
-	echo "warning: *** no git autocompletion found; installing standalone one for git clone" 1>&2
-	echo "warning: *** a) ensure that git completion scripts are sourced _after_ this script, and/or..." 1>&2
-	echo "warning: *** b) see https://stackoverflow.com/questions/12399002/how-to-configure-git-bash-command-line-completion" 1>&2
-	echo "warning: ***    for how to set up git completion." 1>&2
+	[[ _msg -ne 1 ]] && echo
+	echo "warning $_msg: *** no git autocompletion found; installing standalone one for git clone" 1>&2
+	echo "warning $_msg: *** a) ensure that git completion scripts are sourced _after_ this script, and/or..." 1>&2
+	echo "warning $_msg: *** b) see https://stackoverflow.com/questions/12399002/how-to-configure-git-bash-command-line-completion" 1>&2
+	echo "warning $_msg: ***    for how to set up git completion." 1>&2
+	let _msg++
 
 	# no git autocompletions; add shims and declare we'll autocomplete 'git'
 	_mj_git_clone_orig() { : ; }
