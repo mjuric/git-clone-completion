@@ -397,13 +397,17 @@ _get_repo_list()
 		# wait with spinner (pattern from https://github.com/swelljoe/spinner/blob/master/spinner.sh)
 		local -a marks=(⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏)
 		local i=0
-		printf " (updating %s ) " "${marks[0]}"
+		local spinstart=10
 		while ! test -f "$CACHE"; do
-			printf '\b\b\b\b%s ) ' "${marks[i++ % ${#marks[@]}]}"
+			if [[ $i -ge $spinstart ]]; then
+				# show the spinner if we've waited for longer than a second
+				[[ $i -eq $spinstart ]] && printf '  '
+				printf '\b\b%s ' "${marks[i % ${#marks[@]}]}"
+			fi
 			sleep 0.1
+			let i++
 		done
-#		printf '\b \b\b'
-		printf '\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b               \b\b\b\b\b\b\b\b\b\b\b\b\b\b\b'
+		[[ $i -gt $spinstart ]] && printf '\b\b  \b\b'
 	fi
 
 	# return the list of repos
