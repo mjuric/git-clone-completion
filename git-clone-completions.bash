@@ -296,7 +296,7 @@ _colon_autocomplete()
 ###############################################
 
 # configuration
-GG_CFGDIR=${XDG_CONFIG_HOME:-$HOME/.config/git-get}
+GG_CFGDIR=${XDG_CONFIG_HOME:-$HOME/.config/git-clone-completions}
 GG_AUTHFILE="$GG_CFGDIR/github.auth.netrc"
 
 #
@@ -312,12 +312,12 @@ init-github-completion()
 	echo
 	echo "and generate a new personal access token:"
 	echo
-	echo "    1. Under 'Note', write 'git-get access for $USER@$(hostname)'"
+	echo "    1. Under 'Note', write 'git-clone-completions access for $USER@$(hostname)'"
 	echo "    2. Under 'Select scopes', check 'repo:status' and leave otherwise unchecked."
 	echo
 	echo "Then click the 'Generate Token' green button (bottom of the page)."
 	echo
-	echo "The PAT is equivalent to a password git-get can use to securely access your github account."
+	echo "The PAT is equivalent to a password we can use to list repositories in your github account."
 	echo "Copy the newly generated token and paste it here."
 	echo ""
 	read -sp "Token (note: the typed characters won't show): " TOKEN; echo
@@ -384,14 +384,14 @@ _refresh_repo_cache()
 }
 
 # get list of repositories from organization $1
-# cache the list in .repos.cache.$1
+# cache the list in $CACHEDIR/github.com.$1.cache"
 #
 # author: mjuric@astro.washington.edu
 #
 _get_repo_list()
 {
-	local CACHEDIR=${XDG_CACHE_HOME:-$HOME/.cache/git-get}
-	local CACHE="$CACHEDIR/repos.cache.$1"
+	local CACHEDIR=${XDG_CACHE_HOME:-$HOME/.cache/git-clone-completions}
+	local CACHE="$CACHEDIR/github.com.$1.cache"
 
 	if [[ ! -f "$CACHE" ]]; then
 		# this is the first time we're asking for the list of repos
@@ -525,8 +525,8 @@ _complete_github_url()
 #
 
 if [[ ! -f "$GG_AUTHFILE" ]]; then
-	echo "warning: *** git clone completion disabled because you need to log in first ***" 1>&2
-	echo "warning: *** run 'init-github-completion' for a quick one-time setup.       ***" 1>&2
+	echo "warning: *** GitHub clone completion disabled because you need to log in. ***" 1>&2
+	echo "warning: *** run 'init-github-completion' for a quick one-time setup.     ***" 1>&2
 fi
 
 if ! hash jq 2>/dev/null; then
