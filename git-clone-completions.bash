@@ -359,18 +359,13 @@ _refresh_repo_cache()
 	local ORG="$1"
 	local CACHE="$2"
 
-	if [[ -n $(find "$CACHE" -newermt '-15 seconds' 2>/dev/null) ]]; then
-		return
-	fi
-	mkdir -p $(dirname "$CACHE")
-	touch "$CACHE"
-
 	# extract the number of pages
 	PAGES=$(curl -I -f -s --netrc-file "$GG_AUTHFILE" "https://api.github.com/users/$ORG/repos?page=1&per_page=1000" | 
 		sed -En 's/^Link: (.*)/\1/p' |tr ',' '\n' | grep 'rel="last"' |
 		sed -nE 's/^.*[?&]page=([0-9]+).*/\1/p')
 
 	# fetch all pages to tmpfile and atomically replace the current cache (if any)
+	mkdir -p $(dirname "$CACHE")
 	local TMP="$CACHE.$$.$RANDOM.tmp"
 	for page in $(seq 1 $PAGES); do
 		curl -f -s --netrc-file "$GG_AUTHFILE" "https://api.github.com/users/$ORG/repos?page=$page&per_page=1000" >> "$TMP"
@@ -379,8 +374,6 @@ _refresh_repo_cache()
 	# extract repository names and store into the cache
 	jq -r '.[].name' "$TMP" > "$CACHE"
 	rm -f "$TMP"
-
-	#echo "update to $CACHE done."
 }
 
 # get list of repositories from organization $1
@@ -393,13 +386,24 @@ _get_repo_list()
 	local CACHEDIR=${XDG_CACHE_HOME:-$HOME/.cache/git-clone-completions}
 	local CACHE="$CACHEDIR/github.com.$1.cache"
 
-	if [[ ! -f "$CACHE" ]]; then
-		# this is the first time we're asking for the list of repos
-		# in this organization; do it synchronously
-		_refresh_repo_cache $1 $CACHE
-	else
-		# return what we have and fire off a background update
+	# fire off a background cache update if the cache is stale or non-existant
+	if [[ -z $(find "$CACHE" -newermt '-15 seconds' 2>/dev/null) ]]; then
 		( _refresh_repo_cache $1 $CACHE & )
+	fi
+
+	# this is the first time we're asking for the list of repos
+	# in this organization, wait for the result
+	if [[ ! -f "$CACHE" ]]; then
+		# wait with spinner (pattern from https://github.com/swelljoe/spinner/blob/master/spinner.sh)
+		local -a marks=(⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏)
+		local i=0
+		printf " (updating %s ) " "${marks[0]}"
+		while ! test -f "$CACHE"; do
+			printf '\b\b\b\b%s ) ' "${marks[i++ % ${#marks[@]}]}"
+			sleep 0.1
+		done
+#		printf '\b \b\b'
+		printf '\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b               \b\b\b\b\b\b\b\b\b\b\b\b\b\b\b'
 	fi
 
 	# return the list of repos
