@@ -514,60 +514,15 @@ _complete_github_url()
 	return 1
 }
 
-#########################################
-#                                       #
-# _git_clone enhancements / overrides   #
-#                                       #
-#########################################
-
-# redefine _git_clone to auto-complete the first positional argument
-_git_clone()
-{
-	# try standard completions, return if successful
-	_mj_git_clone_orig
-	[[ ${#COMPREPLY[@]} -gt 0 ]] && return
-
-	# ensure a sane decomposition of the command line,
-	# we have to do this again here as Ubuntu puts @ into $COMP_WORDBREAKS (sigh...)
-	local cur words cword prev
-	_mj_get_comp_words_by_ref -n "=:@" cur words cword prev
-
-	# see if we're completing the second positional argument ('git clone <URL>')
-	__arg_index $(git clone --git-completion-helper 2>/dev/null)
-	[[ $argidx -ne 2 ]] && return
-
-	# Try to complete service URLs
-	_complete_github_url "$cur" && return
-
-	# Begin autocompleting towards a fully qualified http[s]://github.com/org/repo and git@github.com:org/repo forms
-	COMPREPLY=($(compgen -W "${__GITHUB_PREFIXES[*]}" "$cur"))
-	_colon_autocomplete
-}
-
-# git's autocompletion scripts will automatically invoke _git_get() for 'get' subcommand
-_git_get()
-{
-	# ensure a sane decomposition of the command line,
-	local cur words cword prev
-	_mj_get_comp_words_by_ref -n "=:@" cur words cword prev
-
-	# see if we're completing the apropriate positional argument
-	__arg_index $(git clone --git-completion-helper 2>/dev/null)
-
-	local prog=$(basename ${words[0]})
-
-	# 'git-get <URL>'
-	[[ $prog == "git-get" && $argidx -eq 1 ]] && { _complete_github_url "$cur" ""; return; }
-
-	# 'git get <URL>'
-	[[ $prog != "git-get" && $argidx -eq 2 ]] && { _complete_github_url "$cur" ""; return; }
-}
-
 #######################
 #                     #
 # Install completions #
 #                     #
 #######################
+
+#
+# This block must come _before_ redefining _git_clone (and possibly other functions)
+#
 
 if [[ ! -f "$GG_AUTHFILE" ]]; then
 	echo "warning: *** git clone completion disabled because you need to log in first ***" 1>&2
@@ -631,6 +586,55 @@ fi
 complete -o bashdefault -o default -o nospace -F _git_get git-get 2>/dev/null \
 	|| complete -o default -o nospace -F _git_get git-get
 
+
+#########################################
+#                                       #
+# _git_clone enhancements / overrides   #
+#                                       #
+#########################################
+
+# redefine _git_clone to auto-complete the first positional argument
+_git_clone()
+{
+	# try standard completions, return if successful
+	_mj_git_clone_orig
+	[[ ${#COMPREPLY[@]} -gt 0 ]] && return
+
+	# ensure a sane decomposition of the command line,
+	# we have to do this again here as Ubuntu puts @ into $COMP_WORDBREAKS (sigh...)
+	local cur words cword prev
+	_mj_get_comp_words_by_ref -n "=:@" cur words cword prev
+
+	# see if we're completing the second positional argument ('git clone <URL>')
+	__arg_index $(git clone --git-completion-helper 2>/dev/null)
+	[[ $argidx -ne 2 ]] && return
+
+	# Try to complete service URLs
+	_complete_github_url "$cur" && return
+
+	# Begin autocompleting towards a fully qualified http[s]://github.com/org/repo and git@github.com:org/repo forms
+	COMPREPLY=($(compgen -W "${__GITHUB_PREFIXES[*]}" "$cur"))
+	_colon_autocomplete
+}
+
+# git's autocompletion scripts will automatically invoke _git_get() for 'get' subcommand
+_git_get()
+{
+	# ensure a sane decomposition of the command line,
+	local cur words cword prev
+	_mj_get_comp_words_by_ref -n "=:@" cur words cword prev
+
+	# see if we're completing the apropriate positional argument
+	__arg_index $(git clone --git-completion-helper 2>/dev/null)
+
+	local prog=$(basename ${words[0]})
+
+	# 'git-get <URL>'
+	[[ $prog == "git-get" && $argidx -eq 1 ]] && { _complete_github_url "$cur" ""; return; }
+
+	# 'git get <URL>'
+	[[ $prog != "git-get" && $argidx -eq 2 ]] && { _complete_github_url "$cur" ""; return; }
+}
 
 ###############
 #             #
