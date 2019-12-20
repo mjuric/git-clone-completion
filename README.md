@@ -1,7 +1,8 @@
-# GitHub autocompletion for `git clone` (and more)
+# GitHub and GitLab autocompletion for `git clone` (and more)
 
-A `bash` completion script adding autocompletion of GitHub organizations
-and repositories to `git clone` command line.
+A `bash` completion script adding autocompletion of GitHub and GitLab
+organizations and repositories (groups and projects) to `git clone` command
+line.
 
 ![autocompletion gif](http://research.majuric.org/media/git-clone-completions-2.gif)
 
@@ -41,6 +42,14 @@ Receiving objects: 100% (268/268), 3.21 MiB | 9.69 MiB/s, done.
 Resolving deltas: 100% (116/116), done.
 ```
 
-Organizations are autocompleted from the list of directories found in `$PROJECTS/github.com` (defaulting to `$HOME/projects/github.com`). See `git-get` in this repository for a `git clone` equivalent that automatically organizes clones into `$PROJECTS/github.com/<org>/<repo>` (and, similar to [hub](https://github.com/github/hub), allows you type `git get mjuric/git-utils`).
+Organizations are autocompleted from the list of directories found in
+`$PROJECTS/$service` (defaulting to `$HOME/projects/$service`), where
+$service is 'github.com' or 'gitlab.com'.  See `git-get` in this repository
+for a `git clone` equivalent that automatically organizes clones into
+`$PROJECTS/github.com/<org>/<repo>` (and, similar to
+[hub](https://github.com/github/hub), allows you type `git get
+mjuric/git-utils`).
 
-Other hosting services could be supported as well (gitlab, ssh-accessible servers). Open an issue if you're interested in taking a stab at it (I'd be happy to give you pointers). PRs always welcome!
+Other hosting services could be supported as well (bitbucket, ssh-accessible
+servers).  Open an issue if you're interested in taking a stab at it (I'd be
+happy to give you pointers).  PRs always welcome!
