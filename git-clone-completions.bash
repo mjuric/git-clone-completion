@@ -451,7 +451,7 @@ init-gitlab-completion()
 		_gitlab_curl -s "https://gitlab.com/api/v4/users/$GLUSER/projects"; echo
 		echo
 		echo "Hmm, something went wrong -- check the token for typos and/or proper scope. Then try again."
-		exit -1
+		return 1
 	else
 		echo
 		echo "Authentication setup complete; token stored to '$GG_AUTH_gitlab'"
@@ -532,7 +532,7 @@ init-github-completion()
 	if ! curl -I -f -s --netrc-file "$GG_AUTH_github" "https://api.github.com/user" >/dev/null; then
 		curl -s "https://api.github.com/user"
 		echo "Hmm, something went wrong -- most likely you've typed the token incorretly. Rerun and try again."
-		exit -1
+		return 1
 	else
 		echo
 		echo "Authentication setup complete; token stored to '$GG_AUTH_github'"
