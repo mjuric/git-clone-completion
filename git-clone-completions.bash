@@ -404,6 +404,89 @@ __SERVICES=()
 
 ##########################
 #
+# GitLab support
+#
+##########################
+
+__SERVICES+=( gitlab )
+__gitlab_PREFIXES="https://gitlab.com/ git@gitlab.com:"
+GG_AUTH_gitlab="$GG_CFGDIR/gitlab.auth.headers"
+GG_CANONICAL_HOST_gitlab="gitlab.com"
+
+#
+# acquire credentials for GitLab API access. the user
+# is prompted to call this from the command line.
+#
+init-gitlab-completion()
+{
+	echo "Logging into GitLab so we can list repositories..."
+	echo "Please visit:"
+	echo
+	echo "    https://gitlab.com/profile/personal_access_tokens"
+	echo
+	echo "and generate a new personal access token:"
+	echo
+	echo "    1. Under 'Name', write 'git-clone-completions access for $USER@$(hostname)'"
+	echo "    2. Leave 'Expires at' empty"
+	echo "    3. Under 'Scopes', check 'api' and leave others unchecked."
+	echo
+	echo "Then click the 'Create personal access token' button (below the form)."
+	echo
+	echo "The PAT is equivalent to a password we can use to list repositories in your GitLab account."
+	echo "Copy the newly generated token and paste it here."
+	echo ""
+	read -sp "Token (note: the typed characters won't show): " TOKEN; echo
+	read -p  "Your GitLab username: " GLUSER
+
+	# securely store the token and user to a netrc-formatted file
+	mkdir -p "$(dirname $GG_AUTH_gitlab)"
+	rm -f "$GG_AUTH_gitlab"
+	touch "$GG_AUTH_gitlab"
+	chmod 600 "$GG_AUTH_gitlab"
+	# note: echo is a builtin so this is secure (https://stackoverflow.com/a/15229498)
+	echo "Authorization: Bearer $TOKEN" >> "$GG_AUTH_gitlab"
+
+	# verify that the token works
+	if ! _gitlab_call users/$GLUSER/projects >/dev/null; then
+		_gitlab_curl -s "https://gitlab.com/api/v4/users/$GLUSER/projects"; echo
+		echo
+		echo "Hmm, something went wrong -- check the token for typos and/or proper scope. Then try again."
+		exit -1
+	else
+		echo
+		echo "Authentication setup complete; token stored to '$GG_AUTH_gitlab'"
+	fi
+}
+
+# curl call with github authentication
+_gitlab_curl()
+{
+	curl -H "$(cat $GG_AUTH_gitlab)" "$@"
+}
+
+# _gitlab_call <endpoint> <options>
+#
+# example: _gitlab_call groups/gitlab-org/projects simple=true
+#
+_gitlab_call()
+{
+	local endpoint="$1"
+	local options="$2"
+
+	_rest_call _gitlab_curl "https://gitlab.com/api/v4/$endpoint?per_page=100&$options"
+}
+
+# download the repository list of <user|org>
+_gitlab_repo_list()
+{
+	# GitLab doesn't have a unified API for both users and orgs
+	# ('groups' in GitLab parlance). We try users then groups.
+
+	( _gitlab_call users/"$1"/projects simple=true || _gitlab_call groups/"$1"/projects simple=true ) | jq -r '.[].path'
+}
+
+##########################
+#
 # GitHub support
 #
 ##########################
