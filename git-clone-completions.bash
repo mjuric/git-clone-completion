@@ -207,17 +207,89 @@ __mj_common_prefix()
 	echo "$first"
 }
 
-# adapted from https://github.com/torvalds/linux/blob/master/tools/perf/perf-completion.sh#L97
-__mj_ltrim_colon_completions()
+#
+# debugging utility. set GG_DEBUG="$HOME/_completion.log" and run
+# `tail -f $GG_DEBUG` to observe what's going on.
+#
+_dbg()
 {
-    if [[ "$1" == *:* && "$COMP_WORDBREAKS" == *:* ]]; then
-        # Remove colon-word prefix from COMPREPLY items
-        local colon_word=${1%"${1##*:}"}  # "
-        local i=${#COMPREPLY[*]}
-        while [[ $((--i)) -ge 0 ]]; do
-            COMPREPLY[$i]=${COMPREPLY[$i]#"$colon_word"}
-        done
-    fi
+	[[ -n $GG_DEBUG ]] && echo "[$(date)]" "$@" >> "$GG_DEBUG"
+}
+
+#
+# trim completions to the substring bash expects to see.
+#
+# details: bash tokenizes the input string by breaking it on characters
+# found in $COMP_WORDBREAKS.  The resulting tokenized list is placed into
+# the ${COMP_WORDS[@]} array for autocompletion functions to use.  This is
+# fragile for our purposes as a) the user can override the characters, and
+# b) is known to be horribly buggy in older versions of bash (spcifically
+# v3.2 that is included with macOS). We therefore don't use this tokenization,
+# but re-tokenize the line (see _mj_get_comp_words_by_ref) to get tokens
+# broken up on "sane" characters (though that's not entirely foolproof).
+#
+# The COMPREPLY that we construct generates replies in reference to that
+# re-tokenized array. For example, 'git@gi' may get suggestions such as
+# COMPREPLY=('git@github.com:' 'git@gitlab.com:'). However, bash expects to 
+# get suggestions to replace only the last token as *it* generated (which,
+# if $COMP_WORDBREAKS included '@', would only be 'gi' in the example above.
+# So we have to change COMPREPLY to return what bash expects, by removing
+# the longest prefix from the input token (e.g., 'git@gi' above) that ends
+# in one of the delimiters we chose to ignore when re-tokenizing (typically
+# @, :, and =. So this function would change COMPREPLY to
+# COMPREPLY=('github.com:' 'gitlab.com:')
+#
+# Notes: bash 3.2 has two rather nasty bugs we have to take care of:
+#   - a) when not splitting on ':', it leaves the delimiter as a part
+#        of the input string (e.g., 'git@gi' gets split into 'git' '@gi'),
+#        so our suggestions must include the delimiter (i.e., example
+#        above would have COMPREPLY=('@github.com:' '@gitlab.com:') ).
+#   - b) to make matters more confusing, while the tokenization is done
+#        on all characters it $COMP_WORDBREAKS, the ${COMP_WORDS[@]}
+#        array ends up being tokenized on just the spaces! E.g., in
+#        the example above COMP_WORDS=('git' 'clone' 'git@gi') on bash 3.2
+#        whereas on 4.0 and newer it would (correctly) be equal to
+#        COMP_WORDS=('git' 'clone' 'git' '@' 'gi')
+#
+# inputs and outputs are passed via environmental variables.
+#
+# inputs:
+#   $1: the current word (as returned by _mj_get_comp_words_by_ref)
+#   ${COMPREPLY[@]}: the completions relative to re-tokenized line (input)
+#
+# outputs:
+#   ${COMPREPLY[@]}: completions that can be passed back to bash to
+#                    correctly auto-complete the word.
+#
+# author: mjuric@astro.washington.edu
+#
+__mj_ltrim_completions()
+{
+	# characters that readline breaks on, but we don't
+	local nobreak='@:='
+
+	# find the longest prefix delimited by a char in $nobreak
+	# that also appears in $COMP_WORDBREAKS
+	local prefix=
+	local c char
+	while read -n1 c; do
+		[[ "$COMP_WORDBREAKS" != *"$c"* ]] && continue
+
+		local try=${1%"${1##*$c}"}     # "
+		[[ "${#try}" -gt "${#prefix}" ]] && { prefix="$try"; char=$c; }
+	done < <(echo -n "$nobreak")
+
+	# bugfix for bash 3.2 (macOS): leave the delimiter if it's not ':'
+	[[ "$char" != ':' ]] && prefix=${prefix%"$char"}
+
+	# Remove the prefix from COMPREPLY items
+	local i=${#COMPREPLY[*]}
+	while [[ $((--i)) -ge 0 ]]; do
+		COMPREPLY[$i]=${COMPREPLY[$i]#"$prefix"}
+	done
+
+	_dbg "input=$1 || prefix=$prefix || char=$char"
+	_dbg COMPREPLY="${COMPREPLY[@]}"
 }
 
 #
@@ -283,23 +355,63 @@ _colon_autocomplete()
 {
 	# save the human form
 	local compreply=("${COMPREPLY[@]}")
-	__mj_ltrim_colon_completions "$cur"
+	__mj_ltrim_completions "$cur"
 	_fancy_autocomplete
 }
 
 
 
-###############################################
-#                                             #
-#         GitHub Completion Utilities         #
-#                                             #
-###############################################
+#######################################
+#                                     #
+#         REST Call Utilities         #
+#                                     #
+#######################################
 
 # configuration
 GG_CFGDIR=${XDG_CONFIG_HOME:-$HOME/.config/git-clone-completions}
 GG_CACHEDIR=${XDG_CACHE_HOME:-$HOME/.cache/git-clone-completions}
 
-GG_AUTHFILE="$GG_CFGDIR/github.auth.netrc"
+# call an endpoint and retrieve the full result.
+# reads all pages if the result is paginated and has the
+# standard Link: header.
+#
+# _rest_call <curl_with_auth> <url>
+#
+_rest_call()
+{
+	local curl="$1"
+	local url="$2"
+
+	local tmp=$(mktemp)
+
+	while [[ -n "$url" ]]; do
+		# download page
+		$curl -f -s -D "$tmp" "$url" || { rm -f "$tmp"; return 1; }
+
+		# find the next URL
+		url=$(cat "$tmp" | sed -En 's/^Link: (.*)/\1/p' |tr ',' '\n' | grep 'rel="next"' | sed -nE 's/^.*<(.*)>.*$/\1/p')
+	done
+	rm -f "$tmp"
+}
+
+########################################################################
+#
+# Repository hosting services
+#
+########################################################################
+
+__SERVICES=()
+
+##########################
+#
+# GitHub support
+#
+##########################
+
+__SERVICES+=( github )
+__github_PREFIXES="https://github.com/ git@github.com:"
+GG_AUTH_github="$GG_CFGDIR/github.auth.netrc"
+GG_CANONICAL_HOST_github="github.com"
 
 #
 # acquire credentials for GitHub API access. the user
@@ -326,24 +438,49 @@ init-github-completion()
 	read -p "Your GitHub username: " GHUSER
 
 	# securely store the token and user to a netrc-formatted file
-	mkdir -p "$(dirname $GG_AUTHFILE)"
-	rm -f "$GG_AUTHFILE"
-	touch "$GG_AUTHFILE"
-	chmod 600 "$GG_AUTHFILE"
+	mkdir -p "$(dirname $GG_AUTH_github)"
+	rm -f "$GG_AUTH_github"
+	touch "$GG_AUTH_github"
+	chmod 600 "$GG_AUTH_github"
 	# note: echo is a builtin so this is secure (https://stackoverflow.com/a/15229498)
-	echo "machine api.github.com login $GHUSER password $TOKEN" >> "$GG_AUTHFILE"
+	echo "machine api.github.com login $GHUSER password $TOKEN" >> "$GG_AUTH_github"
 
 	# verify that the token works
-	if ! curl -I -f -s --netrc-file "$GG_AUTHFILE" "https://api.github.com/user" >/dev/null; then
+	if ! curl -I -f -s --netrc-file "$GG_AUTH_github" "https://api.github.com/user" >/dev/null; then
 		curl -s "https://api.github.com/user"
 		echo "Hmm, something went wrong -- most likely you've typed the token incorretly. Rerun and try again."
 		exit -1
 	else
 		echo
-		echo "Authentication setup complete; token stored to '$GG_AUTHFILE'"
+		echo "Authentication setup complete; token stored to '$GG_AUTH_github'"
 	fi
 }
 
+# curl call with github authentication
+_github_curl()
+{
+	curl --netrc-file "$GG_AUTH_github" "$@"
+}
+
+# _github_call <endpoint> <options>
+#
+# example: _github_call groups/github-org/projects simple=true
+#
+_github_call()
+{
+	local endpoint="$1"
+	local options="$2"
+
+	_rest_call _github_curl "https://api.github.com/$endpoint?per_page=100&$options"
+}
+
+# download the repository list of <user|org>
+_github_repo_list()
+{
+	_github_call users/"$1"/repos | jq -r '.[].name'
+}
+
+######################
 
 #
 # Return a list of repositories from github.com/<org> as cached in <dest_cache_fn>,
@@ -352,44 +489,42 @@ init-github-completion()
 # function will _not_ see the cache as stale). This is intentional and allows the
 # cache to be refreshed in the background (see _get_repo_list)
 #
-# _refresh_repo_cache <org> <dest_cache_fn>
+# _refresh_repo_cache <service_slug> <org> <dest_cache_fn>
 #
 # author: mjuric@astro.washington.edu
 #
 _refresh_repo_cache()
 {
-	local ORG="$1"
-	local CACHE="$2"
+	local service="$1"
+	local ORG="$2"
+	local CACHE="$3"
 
-	# extract the number of pages
-	PAGES=$(curl -I -f -s --netrc-file "$GG_AUTHFILE" "https://api.github.com/users/$ORG/repos?page=1&per_page=1000" | 
-		sed -En 's/^Link: (.*)/\1/p' |tr ',' '\n' | grep 'rel="last"' |
-		sed -nE 's/^.*[?&]page=([0-9]+).*/\1/p')
-
-	# fetch all pages to tmpfile and atomically replace the current cache (if any)
+	# create a temp file on the same filesystem as the destination file
 	mkdir -p $(dirname "$CACHE")
 	local TMP="$CACHE.$$.$RANDOM.tmp"
-	for page in $(seq 1 $PAGES); do
-		curl -f -s --netrc-file "$GG_AUTHFILE" "https://api.github.com/users/$ORG/repos?page=$page&per_page=1000" >> "$TMP"
-	done
 
-	# extract repository names and store into the cache
-	jq -r '.[].name' "$TMP" > "$CACHE"
-	rm -f "$TMP"
+	_${service}_repo_list "$ORG" > "$TMP"
+
+	# atomic update
+	mv "$TMP" "$CACHE"
 }
 
 # get list of repositories from organization $1
 # cache the list in $GG_CACHEDIR/github.com.$1.cache"
 #
+# _get_repo_list <service_slug> <org>
+#
 # author: mjuric@astro.washington.edu
 #
 _get_repo_list()
 {
-	local CACHE="$GG_CACHEDIR/github.com.$1.cache"
+	local service="$1"
+	local org="$2"
+	local CACHE="$GG_CACHEDIR/$service.$org.cache"
 
 	# fire off a background cache update if the cache is stale or non-existant
 	if [[ -z $(find "$CACHE" -newermt '-15 seconds' 2>/dev/null) ]]; then
-		( _refresh_repo_cache $1 $CACHE & )
+		( _refresh_repo_cache "$service" "$org" "$CACHE" & )
 	fi
 
 	# this is the first time we're asking for the list of repos
@@ -432,6 +567,7 @@ _get_repo_list()
 # _complete_github_fragment <urlbase> "org_repo_fragment"
 #
 #  arg(s):
+#    service slug (github or gitlab)
 #    URL base (e.g., https://github.com/ or git@github.com:)
 #    The (partial) 'org/repo' github URL fragment
 #
@@ -441,12 +577,20 @@ _get_repo_list()
 #
 # author: mjuric@astro.washington.edu
 #
-_complete_github_fragment()
-{
-	local urlbase="$1"
-	local URL="$2"
+_resolve_var() { echo "${!1}"; }
 
-	# if more than one '/' character. this is not a valid github URL; stop.
+_complete_fragment()
+{
+	local service="$1"
+	local urlbase="$2"
+	local URL="$3"
+
+	local chost=$(_resolve_var "GG_CANONICAL_HOST_$service")
+	local GG_AUTH=$(_resolve_var "GG_AUTH_$service")
+
+#	echo service=$service urlbase=$urlbase URL=$URL chost=$chost GG_AUTH=$GG_AUTH
+
+	# if more than one '/' character. this is not a valid URL; stop.
 	[[ $URL == */*/* ]] && return 1
 
 	# are we're completing the org or the repo part?
@@ -455,22 +599,22 @@ _complete_github_fragment()
 		# completing the org: show a list of already cloned orgs
 		#
 		local PROJECTS="${PROJECTS:-$HOME/projects}"
-		PROJECTS="$PROJECTS/github.com"
+		PROJECTS="$PROJECTS/$chost"
 
 		WORDS=( $(ls "$PROJECTS" 2>/dev/null) )
 		WORDS=( "${WORDS[@]/%//}" )
 	else
 		#
-		# completing the repo: offer a list of repos available on github
+		# completing the repo: offer a list of repos available on the service
 		#
 		IFS='/' read -ra arr <<< "$URL"
 		ORG=${arr[0]}
 		REPO=${arr[1]}
 
-		if [[ ! -f "$GG_AUTHFILE" ]]; then
+		if [[ ! -f "$GG_AUTH" ]]; then
 			# short-circuit if we haven't authenticated, with
 			# a helpful message
-			COMPREPLY=("Error: run \`init-github-completion\` to activate repository completion." "completion currently disabled.")
+			COMPREPLY=("error: run \`init-$service-completion\` to authenticate for repository completion." "completion currently disabled.")
 			return
 		elif ! hash jq 2>/dev/null; then
 			# short-circuit if we haven't authenticated, with
@@ -479,12 +623,13 @@ _complete_github_fragment()
 			return
 		fi
 
-		_get_repo_list "$ORG"
+		_get_repo_list "$service" "$ORG"
 		WORDS=( "${REPOS[@]/#/$ORG/}" )		# prepend the org name
 		WORDS=( "${WORDS[@]/%/ }" )		# append a space (so the suggestion completes the argument)
 	fi
 
 	# only return completions matching the typed prefix
+	COMPREPLY=()
 	for i in "${!WORDS[@]}"; do
 		if [[ ${WORDS[i]} == "$URL"* ]]; then
 			COMPREPLY+=("${WORDS[i]}")
@@ -494,32 +639,44 @@ _complete_github_fragment()
 	# user-friendly completions and colon handling
 	compreply=( ${COMPREPLY[@]} )			# this is to be shown to the user
 	COMPREPLY=("${COMPREPLY[@]/#/$urlbase}")
-	__mj_ltrim_colon_completions "$cur"		# these are the actual completions
+	__mj_ltrim_completions "$cur"			# these are the actual completions
 	_fancy_autocomplete
 }
 
-# test if we're completing a fully qualified GitHub URL, complete it
-# if so, return 1 otherwise.
+# test if we're completing a fully qualified URL of $service, complete it
+# if so, return 1 otherwise and the URL prefix to watch for in __PREFIXES
 #
-# args:  $cur
+# args:  $service
+#        $cur
 #        <...> additional prefixes to compare to; pass "" to compare just the fragment
+#
+# expects:
+#        A list of URL prefixes in ${__${service}_PREFIXES}.  See
+#        __github_PREFIXES for an example.
+#
+# returns:
+#	COMPREPLY
+#	Adds own prefixes to __PREFIXES
 #
 # author: mjuric@astro.washington.edu
 #
-__GITHUB_PREFIXES=("https://github.com/" "git@github.com:")
-_complete_github_url()
+_complete_url()
 {
-	local cur="$1"
-	shift
+	local service="$1"
+	local cur="$2"
+	shift; shift
+
+	local prefixes=$(_resolve_var __${service}_PREFIXES)
 
 	local urlbase=
-	for urlbase in "${__GITHUB_PREFIXES[@]}" "$@"; do
+	for urlbase in $prefixes "$@"; do
 		[[ $cur != "$urlbase"* ]] && continue
 
-		_complete_github_fragment "$urlbase" "${cur#"$urlbase"}"
+		_complete_fragment $service "$urlbase" "${cur#"$urlbase"}"
 		return
 	done
 
+	__PREFIXES="$__PREFIXES $prefixes"
 	return 1
 }
 
@@ -633,12 +790,6 @@ __check_update()
 #
 _msg=1
 
-if [[ ! -f "$GG_AUTHFILE" ]]; then
-	echo "error $_msg: *** GitHub clone completion disabled because you need to log in. ***" 1>&2
-	echo "error $_msg: *** run 'init-github-completion' for a quick one-time setup.     ***" 1>&2
-	let _msg++
-fi
-
 if ! hash jq 2>/dev/null; then
 	[[ _msg -ne 1 ]] && echo
 	echo "error $_msg: *** git clone completion disabled because you're missing 'jq'  ***" 1>&2
@@ -728,10 +879,14 @@ _git_clone()
 	[[ $argidx -ne 2 ]] && return
 
 	# Try to complete service URLs
-	_complete_github_url "$cur" && return
+	local __PREFIXES=()
+	local service
+	for service in ${__SERVICES[@]}; do
+		_complete_url $service "$cur" && return
+	done
 
 	# Begin autocompleting towards a fully qualified http[s]://github.com/org/repo and git@github.com:org/repo forms
-	COMPREPLY=($(compgen -W "${__GITHUB_PREFIXES[*]}" "$cur"))
+	COMPREPLY=($(compgen -W "$__PREFIXES" "$cur"))
 	_colon_autocomplete
 }
 
@@ -748,10 +903,10 @@ _git_get()
 	local prog=$(basename ${words[0]})
 
 	# 'git-get <URL>'
-	[[ $prog == "git-get" && $argidx -eq 1 ]] && { _complete_github_url "$cur" ""; return; }
+	[[ $prog == "git-get" && $argidx -eq 1 ]] && { _complete_url github "$cur" ""; return; }
 
 	# 'git get <URL>'
-	[[ $prog != "git-get" && $argidx -eq 2 ]] && { _complete_github_url "$cur" ""; return; }
+	[[ $prog != "git-get" && $argidx -eq 2 ]] && { _complete_url github "$cur" ""; return; }
 }
 
 ###############
