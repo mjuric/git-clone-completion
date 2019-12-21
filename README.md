@@ -1,8 +1,9 @@
-# GitHub, GitLab, Bitbucket autocompletion for `git clone` (and more)
+# GitHub, GitLab, Bitbucket and SSH autocompletion for `git clone`
 
 A `bash` completion script adding autocompletion of GitHub, GitLab, and
 Bitbucket organizations and repositories to `git clone` command
 line. Works with both public and private repositories and organizations.
+Also autocompletes arbitrary servers accessible via SSH.
 
 ![autocompletion gif](http://research.majuric.org/media/git-clone-completions-2.gif)
 
@@ -50,6 +51,7 @@ for a `git clone` equivalent that automatically organizes clones into
 [hub](https://github.com/github/hub), allows you type `git get
 mjuric/git-utils`).
 
-Other hosting services could be supported as well (bitbucket, ssh-accessible
-servers).  Open an issue if you're interested in taking a stab at it (I'd be
-happy to give you pointers).  PRs always welcome!
+The code should be easily extensible to other hosting services (e.g.,
+private GitLab or GitHub Enterprise deployments).  Open an issue if you're
+interested in taking a stab at it (I'd be happy to give you pointers).  PRs
+always welcome!
