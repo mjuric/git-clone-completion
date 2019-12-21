@@ -563,6 +563,106 @@ _github_repo_list()
 	_github_call users/"$1"/repos | jq -r '.[].name'
 }
 
+##########################
+#
+# Bitbucket support
+#
+##########################
+
+__SERVICES+=( bitbucket )
+__bitbucket_PREFIXES="https://bitbucket.org/ git@bitbucket.org:"
+GG_AUTH_bitbucket="$GG_CFGDIR/bitbucket.auth"
+GG_CANONICAL_HOST_bitbucket="bitbucket.org"
+
+#
+# acquire credentials for Bitbucket API access. the user
+# is prompted to call this from the command line.
+#
+init-bitbucket-completion()
+{
+	local BBUSER BBPASS
+
+	echo "Logging into Bitbucket so we can list repositories..."
+	echo
+	read -p "Your Bitbucket username: " BBUSER
+	echo
+	echo "Now please visit:"
+	echo
+	echo "    https://bitbucket.org/account/user/$BBUSER/app-passwords/new"
+	echo
+	echo "to generate a new 'app password':"
+	echo
+	echo "    1. Under 'Label', write 'git-clone-completions access for $USER@$(hostname)'"
+	echo "    2. Under 'Permissions', check:"
+	echo "       a) 'Read' under 'Account'"
+	echo "       b) 'Read' under 'Projects'"
+	echo
+	echo "and leave others unchecked. Then click the 'Create' button."
+	echo
+	echo "This is an app-specific password which we will use to list repositories"
+	echo "in your GitLab account."
+	echo
+	echo "Copy the newly generated password and paste it here."
+	echo ""
+	read -sp "Password (note: the typed characters won't show): " BBPASS; echo
+
+	# securely store the token and user to a netrc-formatted file
+	mkdir -p "$(dirname $GG_AUTH_bitbucket)"
+	rm -f "$GG_AUTH_bitbucket"
+	touch "$GG_AUTH_bitbucket"
+	chmod 600 "$GG_AUTH_bitbucket"
+	# note: echo is a builtin so this is secure (https://stackoverflow.com/a/15229498)
+	echo "$BBUSER:$BBPASS" >> "$GG_AUTH_bitbucket"
+
+	# verify that the token works
+	if ! _bitbucket_call "2.0/repositories/$BBUSER" >/dev/null; then
+		echo
+		echo "Hmm, something went wrong -- check the token for typos and/or proper scope. Then try again."
+		rm -f "$GG_AUTH_bitbucket"
+		return 1
+	else
+		echo
+		echo "Authentication setup complete; token stored to '$GG_AUTH_bitbucket'"
+	fi
+}
+
+# curl call with bitbucket authentication
+_bitbucket_curl()
+{
+	curl --user "$(cat $GG_AUTH_bitbucket)" "$@"
+}
+
+# _bitbucket_call <endpoint> <options>
+#
+# example: _bitbucket_call 2.0/repositories/atlassian simple=true
+#
+_bitbucket_call()
+{
+	local endpoint="$1"
+	local options="$2"
+
+	local url="https://api.bitbucket.org/$endpoint?pagelen=100&$options"
+
+	local tmp=$(mktemp)
+	while [[ -n "$url" ]]; do
+		# download page
+		_bitbucket_curl -f -s "$url" > "$tmp" || { rm -f "$tmp"; return 1; }
+
+		# echo the content
+		cat "$tmp" | jq -r '.values'
+
+		# find next page (jq trick from https://github.com/stedolan/jq/issues/354#issuecomment-43147898)
+		url=$(cat "$tmp" | jq -r '.next // empty')
+	done
+	rm -f "$tmp"
+}
+
+# download the repository list of <user|org>
+_bitbucket_repo_list()
+{
+	_bitbucket_call 2.0/repositories/"$1" | jq -r '.[].name'
+}
+
 ######################
 
 #
