@@ -665,6 +665,190 @@ _bitbucket_repo_list()
 	_bitbucket_call 2.0/repositories/"$1" | jq -r '.[].name'
 }
 
+############################
+#
+# Remote host via ssh
+#
+############################
+
+# things we want to backslash escape in scp paths
+_scp_path_esc='[][(){}<>",:;^&!$=?`|\\'"'"'[:space:]]'
+
+# this will be our shortened path to SSH ControlMaster socket. See the comment
+# in _scp_remote_files(), where it's initialized on first use.
+__ssh_sockdir=
+
+# Complete remote files with ssh.  If the first arg is -d, complete on dirs
+# only.  Returns paths escaped with three backslashes.
+_ssh_list_files()
+{
+	local IFS=$'\n'
+
+	# should we only return dirs?
+	local dirs_only
+	[[ $1 == -d ]] && { dirs_only=1; shift; }
+
+	# split url
+	local userhost=${1%%:*}
+	local path=${1#*:}
+	local sockdir="${2:-$HOME/.ssh}"
+
+	#_dbg "cur=[$1] userhost=[$userhost] path=[$path] sockdir=[$sockdir]"
+
+	# construct our ssh invocation
+	local ssh=(ssh -o 'Batchmode yes' -o "ControlMaster auto" -o "ControlPath $sockdir/%C" -o "ControlPersist 90s" "$userhost")
+
+	local files
+	if [[ $dirs_only == 1 ]]; then
+		# escape problematic characters; remove non-dirs
+		files=$("${ssh[@]}"  \
+			command ls -aF1dL "$path*" 2>/dev/null | \
+			command sed -e 's/'$_scp_path_esc'/\\&/g' -e '/[^\/]$/d')
+
+		# if only one dir remains, and it has no subdirs, append a space
+		# rather than a slash
+		local f=( $files )
+		if [[ ${#f[@]} == 1 ]]; then
+			#_dbg "checking subdir"
+			if [[ -z $("${ssh[@]}" command ls -aF1dL "$f*" 2>/dev/null | sed -e '/[^\/]$/d' ) ]]; then
+				files="${f%/} "
+				#_dbg "end of hierarchy: files=[[$files]]"
+			fi
+		fi
+	else
+		# escape problematic characters; remove executables, aliases, pipes
+		# and sockets; add space at end of file names
+		files=$("${ssh[@]}"  \
+			command ls -aF1dL "$path*" 2>/dev/null | \
+			command sed -e 's/'$_scp_path_esc'/\\&/g' -e 's/[*@|=]$//g' \
+			-e 's/[^\/]$/& /g')
+	fi
+
+	COMPREPLY=($files)
+	#echo "$files"
+}
+
+_ssh_list_files_w_progress()
+{
+	# set up ssh multiplexing, for faster path browsing
+	local sockdir0="$GG_CACHEDIR/ssh-sockets"
+	mkdir -p "$sockdir0"
+	chmod 700 "$sockdir0"
+
+	# for ssh multiplexing to work, we need to make the path to the control socket
+	# shorter than 104 chars (https://unix.stackexchange.com/a/367012). Otherwise
+	# you'll see myterious 'unix_listener: path "..." too long for Unix domain socket'
+	# messages pop up. So instead of passing the real path, we'll create a shorter
+	# symlink to the path in /tmp (/tmp must exist; see https://superuser.com/a/332616)
+	# unfortunately, we can't just `mktemp -d` because macOS is weird and doesn't
+	# respect TMPDIR (https://unix.stackexchange.com/a/555214), so we try to emulate
+	# it's secure path creation.
+	while [[ -z $__ssh_sockdir ]]; do
+		__ssh_sockdir="/tmp/git-comp-$USER.$$.$RANDOM"
+		if mkdir "$__ssh_sockdir" 2>/dev/null; then
+			chmod 700 "$__ssh_sockdir";
+			ln -s "$sockdir0" "$__ssh_sockdir/s"
+			break;
+		fi
+	done
+	local sockdir="$__ssh_sockdir/s"
+
+	# get the file listing in the background, returning the
+	# results in file $results (atomically)
+	local results="$GG_CACHEDIR/ssh-listing.$$.$RANDOM.tmp"
+	( (
+		mkdir -p $(basename "$results")
+		_ssh_list_files "$@" "$sockdir"
+		printf "%s\n" "${COMPREPLY[@]}" > "$results.2"
+		mv "$results.2" "$results"
+	  ) &
+	)
+
+	# wait for "$results" to become available, showing the
+	# spinner if it's taking awhile
+	#_dbg "about to spin-wait"
+	spin_wait "[[ -f \"$results\" ]]" 1>&2
+	#_dbg "spin-wait done."
+
+	IFS=$'\n' read -d '' -r -a COMPREPLY <"$results"
+	#_dbg "COMPREPLY=""${COMPREPLY[@]}"
+	rm -f "$results"
+}
+
+#
+# Show a fancy spinner until `eval "$1"` becomes true
+#
+spin_wait()
+{
+	cond="$1"
+
+	# wait with spinner (pattern from https://github.com/swelljoe/spinner/blob/master/spinner.sh)
+	local -a marks=(⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏)
+	local i=0
+	local spinstart=10
+	while ! eval "$cond"; do
+		if [[ $i -ge $spinstart ]]; then
+			# show the spinner if we've waited for longer than a second
+			[[ $i -eq $spinstart ]] && printf '  '
+			printf '\b\b%s ' "${marks[i % ${#marks[@]}]}"
+		fi
+		sleep 0.1
+		let i++
+	done
+	[[ $i -gt $spinstart ]] && printf '\b\b  \b\b'
+}
+
+# test if we're completing a generic SSH URL, complete it if so, return 1
+# otherwise and the URL prefix to watch for in __PREFIXES
+#
+# args:
+#       $cur
+#
+# returns:
+#	COMPREPLY
+#	Adds own prefixes to __PREFIXES
+#
+# author: mjuric@astro.washington.edu
+#
+_complete_ssh_url()
+{
+	local cur="$1"
+	local recent="$GG_CACHEDIR/ssh.recent"
+
+	# $cur may be [foo@]example.com:[dir]; check if that's the case
+	if [[ $cur != *:* ]]; then
+		local offers=( $(cut -d ' ' -f 2 "$recent" 2>/dev/null) )
+		offers=( "${offers[@]/%/:}" )
+		#_dbg "offers=[${offers[*]}]"
+		__PREFIXES="$__PREFIXES ${offers[*]}"
+		return 1
+	fi
+
+	# autocomplete the path
+	_ssh_list_files_w_progress -d "$cur"
+
+	# remember last few successful completions to offer to
+	# autocomplete them.
+	if [[ ${#COMPREPLY[@]} != 0 ]]; then
+		#_dbg "recent=[$recent]"
+		mkdir -p $(dirname "$recent")
+
+		local tmp="$recent.$$.$RANDOM.tmp"
+		cat "$recent" >"$tmp" 2>/dev/null
+		local userhost=${cur%%:*}
+		echo "$(date +%s) $userhost" >> "$tmp"
+
+		# keep 5 most recently used unique entries
+		# algorithm: sort desc by hostname, time | keep first of each hosts | sort desc by time | keep first 5
+		sort -k2,2 -k1,1 -r "$tmp" | uniq -f 1 | sort -rn -k1,1 | head -n 5 > "$tmp.2"
+		mv "$tmp.2" "$recent"
+
+		rm -f "$tmp" "$tmp.2"
+	fi
+
+	return 0
+}
+
 ######################
 
 #
@@ -1069,6 +1253,9 @@ _git_clone()
 	for service in ${__SERVICES[@]}; do
 		_complete_url $service "$cur" && return
 	done
+
+	# Try SSH autocomplete
+	_complete_ssh_url "$cur" && return
 
 	# Begin autocompleting towards a fully qualified http[s]://github.com/org/repo and git@github.com:org/repo forms
 	COMPREPLY=($(compgen -W "$__PREFIXES" "$cur"))
