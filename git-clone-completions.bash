@@ -410,7 +410,7 @@ __SERVICES=()
 
 __SERVICES+=( gitlab )
 __gitlab_PREFIXES="https://gitlab.com/ git@gitlab.com:"
-GG_AUTH_gitlab="$GG_CFGDIR/gitlab.auth.headers"
+GG_AUTH_gitlab="$GG_CFGDIR/gitlab.auth.curl"
 GG_CANONICAL_HOST_gitlab="gitlab.com"
 
 #
@@ -444,7 +444,7 @@ init-gitlab-completion()
 	touch "$GG_AUTH_gitlab"
 	chmod 600 "$GG_AUTH_gitlab"
 	# note: echo is a builtin so this is secure (https://stackoverflow.com/a/15229498)
-	echo "Authorization: Bearer $TOKEN" >> "$GG_AUTH_gitlab"
+	echo "header \"Authorization: Bearer $TOKEN\"" >> "$GG_AUTH_gitlab"
 
 	# verify that the token works
 	if ! _gitlab_call users/$GLUSER/projects >/dev/null; then
@@ -462,7 +462,7 @@ init-gitlab-completion()
 # curl call with github authentication
 _gitlab_curl()
 {
-	curl -H "$(cat $GG_AUTH_gitlab)" "$@"
+	curl --config "$GG_AUTH_gitlab" "$@"
 }
 
 # _gitlab_call <endpoint> <options>
@@ -573,7 +573,7 @@ _github_repo_list()
 
 __SERVICES+=( bitbucket )
 __bitbucket_PREFIXES="https://bitbucket.org/ git@bitbucket.org:"
-GG_AUTH_bitbucket="$GG_CFGDIR/bitbucket.auth"
+GG_AUTH_bitbucket="$GG_CFGDIR/bitbucket.auth.curl"
 GG_CANONICAL_HOST_bitbucket="bitbucket.org"
 
 #
@@ -614,7 +614,7 @@ init-bitbucket-completion()
 	touch "$GG_AUTH_bitbucket"
 	chmod 600 "$GG_AUTH_bitbucket"
 	# note: echo is a builtin so this is secure (https://stackoverflow.com/a/15229498)
-	echo "$BBUSER:$BBPASS" >> "$GG_AUTH_bitbucket"
+	echo "user \"$BBUSER:$BBPASS\"" >> "$GG_AUTH_bitbucket"
 
 	# verify that the token works
 	if ! _bitbucket_call "2.0/repositories/$BBUSER" >/dev/null; then
@@ -631,7 +631,7 @@ init-bitbucket-completion()
 # curl call with bitbucket authentication
 _bitbucket_curl()
 {
-	curl --user "$(cat $GG_AUTH_bitbucket)" "$@"
+	curl --config "$GG_AUTH_bitbucket" "$@"
 }
 
 # _bitbucket_call <endpoint> <options>
