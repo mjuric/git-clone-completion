@@ -20,7 +20,9 @@ $ source git-clone-completions.bash
 
 ```bash
 $ git clone <TAB><TAB>
-git@github.com:      https://github.com/
+epyc.astro.washington.edu:  git@gitlab.com:             https://gitlab.com/
+git@bitbucket.org:          https://bitbucket.org/      research.majuric.org:
+git@github.com:             https://github.com/
 
 $ git clone git@github.com:<TAB><TAB>
 astronomy-commons/  dirac-institute/    lsst-dm/            lsst/               mjuric/
