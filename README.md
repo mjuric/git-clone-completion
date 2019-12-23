@@ -1,4 +1,4 @@
-# GitHub, GitLab, Bitbucket and SSH autocompletion for `git clone`
+# TAB-completion for `git clone`: GitHub, GitLab, Bitbucket and SSH
 
 A `bash` completion script adding autocompletion of GitHub, GitLab, and
 Bitbucket organizations and repositories to `git clone` command
