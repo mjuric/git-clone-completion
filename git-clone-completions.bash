@@ -834,6 +834,7 @@ __mj_ssh_write()
 # sentinel is encountered.
 __mj_ssh_read()
 {
+	local IFS=$'\n'
 	while read -r line <&218; do
 		if [[ $line == "${__ssh_msg_sentinel}" ]]; then
 			return
@@ -879,60 +880,79 @@ _ssh()
 	__mj_ssh_read || { _dbg "read failed"; __mj_ssh_stop; return 1; }
 }
 
+_new_test()
+{
+	local userhost=${1%%:*}
+	local path=${1#*:}
 
-# things we want to backslash escape in scp paths
-_scp_path_esc='[][(){}<>",:;^&!$=?`|\\'"'"'[:space:]]'
+	local dir pfix
+	[[ "$path" == */ ]] && { dir="$path"; pfix=; } || { dir=$(dirname $path); pfix=$(basename $path); }
 
-# Complete remote files with ssh.  If the first arg is -d, complete on dirs
-# only.  Returns paths escaped with three backslashes.
-_ssh_list_files()
+	local cmd;
+	read -r -d '' cmd <<-EOF
+		cd $dir && (
+			ls -aF1dL $pfix*/HEAD | sed -n 's|/HEAD[^/]*$||p';
+			ls -aF1dL $pfix*/.git | sed -n 's|/.git/$||p';
+			ls -aF1dL $pfix* | sed -n 's|/$||p'
+		) 2>/dev/null | sort | uniq -c | sed -nE 's| *2 (.*)|\1 |p; s| *1 (.*)|\1/|p'
+	EOF
+
+	echo "$cmd"
+
+	# grab all
+	local IFS=$'\n'
+	[[ $dir == "." ]] && dir=
+	echo "dir=$dir"
+	local res=$(_ssh "$userhost" "$cmd" | sed 's|^|'"$dir"'|')
+	echo "$res"
+}
+
+# Find completions for <fragment> on <host>, return them in ${COMPREPLY[@]}
+#
+# _ssh_list_repos <url>:<fragment>
+#
+# Once the initial SSH connection is established, this is typically fast
+# (on order of 50msec, depending on the speed of your server.)
+#
+_ssh_list_repos()
 {
 	local IFS=$'\n'
-
-	# should we only return dirs?
-	local dirs_only
-	[[ $1 == -d ]] && { dirs_only=1; shift; }
 
 	# split url
 	local userhost=${1%%:*}
 	local path=${1#*:}
-	local sockdir="${2:-$HOME/.ssh}"
-
-	#_dbg "cur=[$1] userhost=[$userhost] path=[$path] sockdir=[$sockdir]"
 
 	# prime the cached connection (as all subsequent invocations will be
 	# in subshells and can't set the various __ssh_* variables with
 	# connection reuse info)
 	_ssh_ensure_started "$userhost" &>/dev/null
 
-	local files
-	if [[ $dirs_only == 1 ]]; then
-		# escape problematic characters; remove non-dirs
-		files=$(_ssh "$userhost" \
-			command ls -aF1dL "$path*" 2>/dev/null | \
-			command sed -e 's/'$_scp_path_esc'/\\&/g' -e '/[^\/]$/d')
+	# here we construct a list of directories containing git repositories
+	# in addition to the list of _all_ directories. The algorithm:
+	#
+	# 1. list directories with HEAD (bare git dirs) and .git/ (workdirs)
+	# 2. list all directories
+	# 3. merge the above lists, sort them, and run unique -c which prints
+	#    out the number of times an entry has appeared. the directories
+	#    which are git dirs will have appeared _twice_ (once because they
+	#    were picked up by #1 above, once because of #2.
+	# 4. for each dir that appeared twice, append a ' ' to the end signaling
+	#    the end of completion. otherwise, append a '/'.
+	local cmd
+	read -r -d '' cmd <<-EOF
+		(
+			ls -aF1dL $path*/HEAD | sed -n 's|/HEAD[^/]*$||p';
+			ls -aF1dL $path*/.git | sed -n 's|/.git/$||p';
+			ls -aF1dL $path* | sed -n 's|/$||p'
+		) 2>/dev/null | sort | uniq -c | sed -nE 's| *2 (.*)|\1 |p; s| *1 (.*)|\1/|p'
+	EOF
+	#echo "$cmd"
 
-		# if only one dir remains, and it has no subdirs, append a space
-		# rather than a slash
-		local f=( $files )
-		if [[ ${#f[@]} == 1 ]]; then
-			#_dbg "checking subdir"
-			if [[ -z $(_ssh "$userhost" command ls -aF1dL "$f*" 2>/dev/null | sed -e '/[^\/]$/d' ) ]]; then
-				files="${f%/} "
-				#_dbg "end of hierarchy: files=[[$files]]"
-			fi
-		fi
-	else
-		# escape problematic characters; remove executables, aliases, pipes
-		# and sockets; add space at end of file names
-		files=$(_ssh "$userhost"  \
-			command ls -aF1dL "$path*" 2>/dev/null | \
-			command sed -e 's/'$_scp_path_esc'/\\&/g' -e 's/[*@|=]$//g' \
-			-e 's/[^\/]$/& /g')
-	fi
+	# grab all
+	local files=$(_ssh "$userhost" "$cmd")
 
 	COMPREPLY=($files)
-	#echo "$files"
+	#echo "===$files==="
 }
 
 # test if we're completing a generic SSH URL, complete it if so, return 1
@@ -963,7 +983,7 @@ _complete_ssh_url()
 
 	# autocomplete the path
 	start_spinner
-	_ssh_list_files -d "$cur"
+	_ssh_list_repos "$cur"
 	stop_spinner
 
 	# remember last few successful completions to offer to
