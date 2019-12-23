@@ -1,7 +1,6 @@
 # TAB-completion for `git clone`: GitHub, GitLab, Bitbucket and SSH
-![](https://img.shields.io/github/v/release/mjuric/git-utils)
-![](https://img.shields.io/github/release-date/mjuric/git-utils)
-![](https://img.shields.io/github/license/mjuric/git-utils)
+[![Latest Stable Release](https://img.shields.io/github/v/release/mjuric/git-utils) ![Released on](https://img.shields.io/github/release-date/mjuric/git-utils)](https://github.com/mjuric/git-utils/releases/latest)
+[![License](https://img.shields.io/github/license/mjuric/git-utils)](LICENSE)
 
 A `bash` completion script adding autocompletion of GitHub, GitLab, and
 Bitbucket organizations and repositories to `git clone` command
