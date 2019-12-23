@@ -9,6 +9,12 @@
 # with git, but can be used standalone as well.
 #
 
+#
+# configuration
+#
+GG_CFGDIR=${XDG_CONFIG_HOME:-$HOME/.config/git-clone-completions}
+GG_CACHEDIR=${XDG_CACHE_HOME:-$HOME/.cache/git-clone-completions}
+
 #############################
 #                           #
 #    Completion utilities   #
@@ -361,15 +367,88 @@ _colon_autocomplete()
 
 
 
+################
+#              #
+#  Spinner UI  #
+#              #
+################
+#
+# Show a fancy spinner until stopped from the main thread. Use it as:
+#
+#    start_spinner
+#    ... potentially long running code ...
+#    stop_spinner
+#
+# The spinner won't show immediately, but only after about ~1 second has
+# passed since the start_spinner call. If stop_spinner is called before
+# this point, nothing will be shown to the user. This allows one to enclose
+# code that only occasionally runs slow, w/o worrying that the uer will
+# be annoyed by a brief flash of the spinner when the code runs fast (e.g.
+# when it gets the results from the cache).
+#
+
+# the directory where the spinner will create start/stop flags
+__spinflagdir="$GG_CACHEDIR"
+__spinflag="${__spinflagdir}/spinflag.$$"
+__inspin="${__spinflagdir}/inspin.$$"
+
+# The function that draws the spinner, run in a subprocess.
+# Properties:
+#   - begins showing the spinner only after a ~second has passed
+#   - runs as long as $__spinflag is set (set by start_spinner, removed by stop_spinner)
+#   - signals it's finished running by removing $__inspin (checked by stop_spinner)
+spin_wait()
+{
+	cond="$1"
+
+	# wait with spinner (pattern from https://github.com/swelljoe/spinner/blob/master/spinner.sh)
+	local -a marks=(⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏)
+	local i=0
+	local spinstart=10
+
+	while [[ -f "${__spinflag}" ]]; do
+		if [[ $i -ge $spinstart ]]; then
+			# show the spinner if we've waited for longer than a second
+			[[ $i -eq $spinstart ]] && printf '  ' >&2
+			printf '\b\b%s ' "${marks[i % ${#marks[@]}]}" >&2
+		fi
+		sleep 0.1
+		let i++
+	done
+	[[ $i -gt $spinstart ]] && printf '\b\b  \b\b' >&2
+
+	rm -f "${__inspin}"
+}
+
+# Starts the spinner by launching it in a background subprocess which will
+# spin as long as $__spinflag file exists
+start_spinner()
+{
+	mkdir -p "${__spinflagdir}"
+	touch "${__spinflag}" "${__inspin}"
+
+	( spin_wait & )
+}
+
+# Stops the spinner by removing $__spinflag, then spinning until spin_wait()
+# signals it exited by the removal of $__inspin
+stop_spinner()
+{
+	# signal the spinner to stop
+	rm -f "${__spinflag}"
+
+	# wait for the spinner to stop
+	while [[ -f "${__inspin}" ]]; do
+		sleep 0.01;
+	done
+}
+
+
 #######################################
 #                                     #
 #         REST Call Utilities         #
 #                                     #
 #######################################
-
-# configuration
-GG_CFGDIR=${XDG_CONFIG_HOME:-$HOME/.config/git-clone-completions}
-GG_CACHEDIR=${XDG_CACHE_HOME:-$HOME/.cache/git-clone-completions}
 
 # call an endpoint and retrieve the full result.
 # reads all pages if the result is paginated and has the
@@ -671,12 +750,131 @@ _bitbucket_repo_list()
 #
 ############################
 
+
+#
+# SSH utils
+#
+
+#
+# ... | _timeout <seconds> | <target_command>
+#
+# exits if no input has been received in <seconds>; otherwise act like cat
+# (passing input through).  We use this to automatically drop cached SSH
+# connections.
+#
+_timeout()
+{
+	local seconds="$1"
+	while read -t $seconds -r line; do
+		echo "$line"
+	done
+	_dbg "exiting _timeout"
+}
+
+# __mj_ssh_start <host>
+__mj_ssh_start()
+{
+	_dbg "in __mj_ssh_start"
+	local host="$1"
+
+	__ssh_host="$host"
+	__ssh_msg_sentinel="--mj-git-cl-comp-$RANDOM-$RANDOM-$RANDOM--"
+	__ssh_fifo="$(mktemp -d)/fifo"
+
+	# create the pipe for ssh output
+	_dbg "__ssh_fifo=$__ssh_fifo"
+	mkfifo "${__ssh_fifo}"
+
+	# we'll write commands to descriptor 217, and read output on descriptor 218
+	# we trap the SIGINT to stop the user's CTRL-C in the terminal from killing the
+	# background ssh connection. e.g.,, imagine the scenario like:
+	#
+	#   $ git clone epyc.astro.washington.edu:<TAB> (...and then <CTRL-C>...)
+	#   $ ... user looks something up ...
+	#   # git clone epyc.astro.washington.edu:<TAB>
+	#
+	# we want the second invocation to re-use the background connection. w/o
+	# trapping SIGINT, the <CTRL-C> would kill it.
+	exec 217> >( trap '' SIGINT; _timeout 120 | ssh -o 'Batchmode yes' "$host" 2>/dev/null >"${__ssh_fifo}"; rm -f "${__ssh_fifo}"; _dbg "== ssh to $__ssh_host exited." )
+	exec 218< "${__ssh_fifo}"
+}
+
+# stop the currently running SSH connection, deleting the FIFO
+__mj_ssh_stop()
+{
+	_dbg "in __mj_ssh_stop"
+
+	exec 217>&-
+	exec 218<&-
+
+	[[ -n "${__ssh_fifo}" ]] && rm -f "${__ssh_fifo}"
+
+	__ssh_host=
+}
+
+# __mj_ssh_write <commands>
+#
+# writes to the SSH pipe, adding a command to echo a sentinel at the end
+# which read_ssh uses to recognize the end of message.
+#
+# WARNING: if you're pairing write/read in the same process, the command
+# being written should be small enough to fit into the pipe capacity on your
+# OS (16k for macOS, 64k for Linux), or otherwise your code _may_ hang.
+#
+__mj_ssh_write()
+{
+	# https://www.gnu.org/software/bash/manual/html_node/Special-Builtins.html
+	# https://unix.stackexchange.com/questions/206786/testing-if-a-file-descriptor-is-valid
+	/bin/echo "$@" "; echo ${__ssh_msg_sentinel}" 2>/dev/null >&217
+}
+
+# __mj_ssh_read
+#
+# reads output from the SSH pipe, echoing them to stdout, until the
+# sentinel is encountered.
+__mj_ssh_read()
+{
+	while read -r line <&218; do
+		if [[ $line == "${__ssh_msg_sentinel}" ]]; then
+			return
+		fi
+
+		echo "$line"
+	done
+	return 1
+}
+
+# _ssh <host> [commands]
+#
+# connect to the SSH server, potentially reusing the connection, and execute
+# <commands>
+#
+_ssh()
+{
+	local host="$1"
+	shift
+
+	# start the connection
+	if [[ $host != $__ssh_host ]] || ! { /bin/echo '' >&217; } 2>/dev/null; then
+		_dbg "new connection for $host"
+		# close any open connection
+		__mj_ssh_stop
+		# open connection
+		__mj_ssh_start "$host" || { _dbg "open failed"; return 1; }
+	else
+		_dbg "reusing connection for $host"
+	fi
+
+	# write commands
+	__mj_ssh_write "(" "$@" ")" || { _dbg "write failed"; __mj_ssh_stop; return 1; }
+
+	# read output
+	__mj_ssh_read || { _dbg "read failed"; __mj_ssh_stop; return 1; }
+}
+
+
 # things we want to backslash escape in scp paths
 _scp_path_esc='[][(){}<>",:;^&!$=?`|\\'"'"'[:space:]]'
-
-# this will be our shortened path to SSH ControlMaster socket. See the comment
-# in _scp_remote_files(), where it's initialized on first use.
-__ssh_sockdir=
 
 # Complete remote files with ssh.  If the first arg is -d, complete on dirs
 # only.  Returns paths escaped with three backslashes.
@@ -695,13 +893,15 @@ _ssh_list_files()
 
 	#_dbg "cur=[$1] userhost=[$userhost] path=[$path] sockdir=[$sockdir]"
 
-	# construct our ssh invocation
-	local ssh=(ssh -o 'Batchmode yes' -o "ControlMaster auto" -o "ControlPath $sockdir/%C" -o "ControlPersist 90s" "$userhost")
+	# prime the cached connection (as all subsequent invocations will be
+	# in subshells and can't set the various __ssh_* variables with
+	# connection reuse info)
+	_ssh "$userhost" : &>/dev/null
 
 	local files
 	if [[ $dirs_only == 1 ]]; then
 		# escape problematic characters; remove non-dirs
-		files=$("${ssh[@]}"  \
+		files=$(_ssh "$userhost" \
 			command ls -aF1dL "$path*" 2>/dev/null | \
 			command sed -e 's/'$_scp_path_esc'/\\&/g' -e '/[^\/]$/d')
 
@@ -710,7 +910,7 @@ _ssh_list_files()
 		local f=( $files )
 		if [[ ${#f[@]} == 1 ]]; then
 			#_dbg "checking subdir"
-			if [[ -z $("${ssh[@]}" command ls -aF1dL "$f*" 2>/dev/null | sed -e '/[^\/]$/d' ) ]]; then
+			if [[ -z $(_ssh "$userhost" command ls -aF1dL "$f*" 2>/dev/null | sed -e '/[^\/]$/d' ) ]]; then
 				files="${f%/} "
 				#_dbg "end of hierarchy: files=[[$files]]"
 			fi
@@ -718,7 +918,7 @@ _ssh_list_files()
 	else
 		# escape problematic characters; remove executables, aliases, pipes
 		# and sockets; add space at end of file names
-		files=$("${ssh[@]}"  \
+		files=$(_ssh "$userhost"  \
 			command ls -aF1dL "$path*" 2>/dev/null | \
 			command sed -e 's/'$_scp_path_esc'/\\&/g' -e 's/[*@|=]$//g' \
 			-e 's/[^\/]$/& /g')
@@ -726,76 +926,6 @@ _ssh_list_files()
 
 	COMPREPLY=($files)
 	#echo "$files"
-}
-
-_ssh_list_files_w_progress()
-{
-	# set up ssh multiplexing, for faster path browsing
-	local sockdir0="$GG_CACHEDIR/ssh-sockets"
-	mkdir -p "$sockdir0"
-	chmod 700 "$sockdir0"
-
-	# for ssh multiplexing to work, we need to make the path to the control socket
-	# shorter than 104 chars (https://unix.stackexchange.com/a/367012). Otherwise
-	# you'll see myterious 'unix_listener: path "..." too long for Unix domain socket'
-	# messages pop up. So instead of passing the real path, we'll create a shorter
-	# symlink to the path in /tmp (/tmp must exist; see https://superuser.com/a/332616)
-	# unfortunately, we can't just `mktemp -d` because macOS is weird and doesn't
-	# respect TMPDIR (https://unix.stackexchange.com/a/555214), so we try to emulate
-	# it's secure path creation.
-	while [[ -z $__ssh_sockdir ]]; do
-		__ssh_sockdir="/tmp/git-comp-$USER.$$.$RANDOM"
-		if mkdir "$__ssh_sockdir" 2>/dev/null; then
-			chmod 700 "$__ssh_sockdir";
-			ln -s "$sockdir0" "$__ssh_sockdir/s"
-			break;
-		fi
-	done
-	local sockdir="$__ssh_sockdir/s"
-
-	# get the file listing in the background, returning the
-	# results in file $results (atomically)
-	local results="$GG_CACHEDIR/ssh-listing.$$.$RANDOM.tmp"
-	( (
-		mkdir -p $(basename "$results")
-		_ssh_list_files "$@" "$sockdir"
-		printf "%s\n" "${COMPREPLY[@]}" > "$results.2"
-		mv "$results.2" "$results"
-	  ) &
-	)
-
-	# wait for "$results" to become available, showing the
-	# spinner if it's taking awhile
-	#_dbg "about to spin-wait"
-	spin_wait "[[ -f \"$results\" ]]" 1>&2
-	#_dbg "spin-wait done."
-
-	IFS=$'\n' read -d '' -r -a COMPREPLY <"$results"
-	#_dbg "COMPREPLY=""${COMPREPLY[@]}"
-	rm -f "$results"
-}
-
-#
-# Show a fancy spinner until `eval "$1"` becomes true
-#
-spin_wait()
-{
-	cond="$1"
-
-	# wait with spinner (pattern from https://github.com/swelljoe/spinner/blob/master/spinner.sh)
-	local -a marks=(⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏)
-	local i=0
-	local spinstart=10
-	while ! eval "$cond"; do
-		if [[ $i -ge $spinstart ]]; then
-			# show the spinner if we've waited for longer than a second
-			[[ $i -eq $spinstart ]] && printf '  '
-			printf '\b\b%s ' "${marks[i % ${#marks[@]}]}"
-		fi
-		sleep 0.1
-		let i++
-	done
-	[[ $i -gt $spinstart ]] && printf '\b\b  \b\b'
 }
 
 # test if we're completing a generic SSH URL, complete it if so, return 1
@@ -825,7 +955,9 @@ _complete_ssh_url()
 	fi
 
 	# autocomplete the path
-	_ssh_list_files_w_progress -d "$cur"
+	start_spinner
+	_ssh_list_files -d "$cur"
+	stop_spinner
 
 	# remember last few successful completions to offer to
 	# autocomplete them.
