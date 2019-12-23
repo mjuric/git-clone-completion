@@ -844,6 +844,24 @@ __mj_ssh_read()
 	return 1
 }
 
+# _ssh_ensure_started <host>
+#
+# ensure there's an open connection to $host
+#
+_ssh_ensure_started()
+{
+	local host="$1"
+	if [[ "$host" != ${__ssh_host} ]] || ! { /bin/echo '' >&217; } 2>/dev/null; then
+		_dbg "new connection for $host"
+		# close any open connection
+		__mj_ssh_stop
+		# open connection
+		__mj_ssh_start "$host" || { _dbg "open failed"; return 1; }
+	else
+		_dbg "reusing connection for $host"
+	fi
+}
+
 # _ssh <host> [commands]
 #
 # connect to the SSH server, potentially reusing the connection, and execute
@@ -854,21 +872,10 @@ _ssh()
 	local host="$1"
 	shift
 
-	# start the connection
-	if [[ $host != $__ssh_host ]] || ! { /bin/echo '' >&217; } 2>/dev/null; then
-		_dbg "new connection for $host"
-		# close any open connection
-		__mj_ssh_stop
-		# open connection
-		__mj_ssh_start "$host" || { _dbg "open failed"; return 1; }
-	else
-		_dbg "reusing connection for $host"
-	fi
+	_ssh_ensure_started "$host"
 
-	# write commands
 	__mj_ssh_write "(" "$@" ")" || { _dbg "write failed"; __mj_ssh_stop; return 1; }
 
-	# read output
 	__mj_ssh_read || { _dbg "read failed"; __mj_ssh_stop; return 1; }
 }
 
@@ -896,7 +903,7 @@ _ssh_list_files()
 	# prime the cached connection (as all subsequent invocations will be
 	# in subshells and can't set the various __ssh_* variables with
 	# connection reuse info)
-	_ssh "$userhost" : &>/dev/null
+	_ssh_ensure_started "$userhost" &>/dev/null
 
 	local files
 	if [[ $dirs_only == 1 ]]; then
