@@ -10,7 +10,7 @@ Also autocompletes arbitrary servers accessible via SSH.
 ## Install
 
 ```bash
-$ curl -O https://raw.githubusercontent.com/mjuric/git-utils/master/git-clone-completions.bash
+$ curl -LO https://github.com/mjuric/git-utils/releases/latest/download/git-clone-completions.bash
 
 # place this into your ~/.bash_profile (Mac) or ~/.bashrc (Linux)
 $ source git-clone-completions.bash
