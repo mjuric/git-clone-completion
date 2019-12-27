@@ -1,3 +1,5 @@
+#!/bin/bash
+
 # intelligent bash completion support for 'git clone' from github
 #
 # Copyright (C) 2019 Mario Juric <mjuric@astro.washington.edu>
@@ -85,10 +87,10 @@ __mj_reassemble_comp_words_by_ref()
 			fi
 			first=
 			words_[$j]=${words_[j]}${COMP_WORDS[i]}
-			if [ $i = $COMP_CWORD ]; then
+			if [ $i = "$COMP_CWORD" ]; then
 				cword_=$j
 			fi
-			if (($i < ${#COMP_WORDS[@]} - 1)); then
+			if ((i < ${#COMP_WORDS[@]} - 1)); then
 				((i++))
 			else
 				# Done.
@@ -96,7 +98,7 @@ __mj_reassemble_comp_words_by_ref()
 			fi
 		done
 		words_[$j]=${words_[j]}${COMP_WORDS[i]}
-		if [ $i = $COMP_CWORD ]; then
+		if [ $i = "$COMP_CWORD" ]; then
 			cword_=$j
 		fi
 	done
@@ -114,6 +116,7 @@ _mj_get_comp_words_by_ref ()
 	fi
 	__mj_reassemble_comp_words_by_ref "$exclude"
 	cur_=${words_[cword_]}
+	# shellcheck disable=SC2034
 	while [ $# -gt 0 ]; do
 		case "$1" in
 		cur)
@@ -167,7 +170,7 @@ _mj_get_comp_words_by_ref ()
 __arg_index()
 {
 	# returned list of positional arguments
-	posargs=( ${words[0]} )
+	posargs=( "${words[0]}" )
 
 	local c p i idx=0
 	for i in $(seq 1 $cword); do
@@ -179,12 +182,12 @@ __arg_index()
 		[[ $c == -* ]] && continue
 
 		# an argument of a previously specified option
-		[[ $p == -* && p != -*=* ]] && (echo "$@" | grep -qw -- "$p=") && continue
+		[[ $p == -* && $p != -*=* ]] && (echo "$@" | grep -qw -- "$p=") && continue
 
 		# a positional argument
 		o=0
 		idx=$((idx+1))
-		posargs+=($c)
+		posargs+=( "$c" )
 	done
 
 	# set $argidx only if the current word was an argument
@@ -221,6 +224,22 @@ _dbg()
 {
 	[[ -n $GG_DEBUG ]] && echo "[$(date)]" "$@" >> "$GG_DEBUG"
 }
+
+#
+# __readlines <var> < <file>
+#
+# read all lines from stdin into an array.  need this for bash 3.2 (could
+# otherwise use mapfile)
+#
+__readlines()
+{
+	# read will return nonzero if EOF is encountred (which it always is)
+	# so we can't use the exit code to tell if anything was read. we
+	# therefore set $1=() before we start
+	eval "$1=()"
+	IFS=$'\n' read -r -d '' -a "$1" 2>/dev/null
+}
+
 
 #
 # trim completions to the substring bash expects to see.
@@ -278,7 +297,7 @@ __mj_ltrim_completions()
 	# that also appears in $COMP_WORDBREAKS
 	local prefix=
 	local c char
-	while read -n1 c; do
+	while read -r -n1 c; do
 		[[ "$COMP_WORDBREAKS" != *"$c"* ]] && continue
 
 		local try=${1%"${1##*$c}"}     # "
@@ -295,7 +314,7 @@ __mj_ltrim_completions()
 	done
 
 	_dbg "input=$1 || prefix=$prefix || char=$char"
-	_dbg COMPREPLY="${COMPREPLY[@]}"
+	_dbg COMPREPLY="${COMPREPLY[*]}"
 }
 
 #
@@ -327,7 +346,8 @@ _fancy_autocomplete()
 	# that prefix is longer than what's been typed so far. if so,
 	# bash will autocomplete up to that prefix and not show the
 	# suggestions (so send it the autocompletion text).
-	local prefix=$(__mj_common_prefix "${COMPREPLY[@]}")
+	local prefix
+	prefix=$(__mj_common_prefix "${COMPREPLY[@]}")
 	[[ "$prefix" != "${cur#*[$COMP_WORDBREAKS]}" ]] && return
 
 	# Not possible to autocomplete beyond what's currently been
@@ -399,8 +419,6 @@ __inspin="${__spinflagdir}/inspin.$$"
 #   - signals it's finished running by removing $__inspin (checked by stop_spinner)
 spin_wait()
 {
-	cond="$1"
-
 	# wait with spinner (pattern from https://github.com/swelljoe/spinner/blob/master/spinner.sh)
 	local -a marks=(⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏)
 	local i=0
@@ -413,7 +431,7 @@ spin_wait()
 			printf '\b\b%s ' "${marks[i % ${#marks[@]}]}" >&2
 		fi
 		sleep 0.1
-		let i++
+		(( i++ ))
 	done
 	[[ $i -gt $spinstart ]] && printf '\b\b  \b\b' >&2
 
@@ -461,14 +479,15 @@ _rest_call()
 	local curl="$1"
 	local url="$2"
 
-	local tmp=$(mktemp)
+	local tmp
+	tmp=$(mktemp)
 
 	while [[ -n "$url" ]]; do
 		# download page
 		$curl -f -s -D "$tmp" "$url" || { rm -f "$tmp"; return 1; }
 
 		# find the next URL
-		url=$(cat "$tmp" | sed -En 's/^Link: (.*)/\1/p' |tr ',' '\n' | grep 'rel="next"' | sed -nE 's/^.*<(.*)>.*$/\1/p')
+		url=$(sed -En 's/^Link: (.*)/\1/p' "$tmp" | tr ',' '\n' | grep 'rel="next"' | sed -nE 's/^.*<(.*)>.*$/\1/p')
 	done
 	rm -f "$tmp"
 }
@@ -488,9 +507,12 @@ __SERVICES=()
 ##########################
 
 __SERVICES+=( gitlab )
-__gitlab_PREFIXES="https://gitlab.com/ git@gitlab.com:"
+# shellcheck disable=SC2034  # used by _complete_url
+{
+__gitlab_PREFIXES="https://gitlab.com/ git@gitlab.com:" 
 GG_AUTH_gitlab="$GG_CFGDIR/gitlab.auth.curl"
 GG_CANONICAL_HOST_gitlab="gitlab.com"
+}
 
 #
 # acquire credentials for GitLab API access. the user
@@ -514,11 +536,11 @@ init-gitlab-completion()
 	echo "The PAT is equivalent to a password we can use to list repositories in your GitLab account."
 	echo "Copy the newly generated token and paste it here."
 	echo ""
-	read -sp "Token (note: the typed characters won't show): " TOKEN; echo
-	read -p  "Your GitLab username: " GLUSER
+	read -rsp "Token (note: the typed characters won't show): " TOKEN; echo
+	read -rp  "Your GitLab username: " GLUSER
 
 	# securely store the token and user to a netrc-formatted file
-	mkdir -p "$(dirname $GG_AUTH_gitlab)"
+	mkdir -p "$(dirname "$GG_AUTH_gitlab")"
 	rm -f "$GG_AUTH_gitlab"
 	touch "$GG_AUTH_gitlab"
 	chmod 600 "$GG_AUTH_gitlab"
@@ -526,7 +548,7 @@ init-gitlab-completion()
 	echo "header \"Authorization: Bearer $TOKEN\"" >> "$GG_AUTH_gitlab"
 
 	# verify that the token works
-	if ! _gitlab_call users/$GLUSER/projects >/dev/null; then
+	if ! _gitlab_call "users/$GLUSER/projects" >/dev/null; then
 		_gitlab_curl -s "https://gitlab.com/api/v4/users/$GLUSER/projects"; echo
 		echo
 		echo "Hmm, something went wrong -- check the token for typos and/or proper scope. Then try again."
@@ -572,9 +594,12 @@ _gitlab_repo_list()
 ##########################
 
 __SERVICES+=( github )
+# shellcheck disable=SC2034  # used by _complete_url
+{
 __github_PREFIXES="https://github.com/ git@github.com:"
 GG_AUTH_github="$GG_CFGDIR/github.auth.netrc"
 GG_CANONICAL_HOST_github="github.com"
+}
 
 #
 # acquire credentials for GitHub API access. the user
@@ -597,11 +622,11 @@ init-github-completion()
 	echo "The PAT is equivalent to a password we can use to list repositories in your github account."
 	echo "Copy the newly generated token and paste it here."
 	echo ""
-	read -sp "Token (note: the typed characters won't show): " TOKEN; echo
-	read -p "Your GitHub username: " GHUSER
+	read -rsp "Token (note: the typed characters won't show): " TOKEN; echo
+	read -rp "Your GitHub username: " GHUSER
 
 	# securely store the token and user to a netrc-formatted file
-	mkdir -p "$(dirname $GG_AUTH_github)"
+	mkdir -p "$(dirname "$GG_AUTH_github")"
 	rm -f "$GG_AUTH_github"
 	touch "$GG_AUTH_github"
 	chmod 600 "$GG_AUTH_github"
@@ -651,9 +676,12 @@ _github_repo_list()
 ##########################
 
 __SERVICES+=( bitbucket )
+# shellcheck disable=SC2034  # used by _complete_url
+{
 __bitbucket_PREFIXES="https://bitbucket.org/ git@bitbucket.org:"
 GG_AUTH_bitbucket="$GG_CFGDIR/bitbucket.auth.curl"
 GG_CANONICAL_HOST_bitbucket="bitbucket.org"
+}
 
 #
 # acquire credentials for Bitbucket API access. the user
@@ -665,7 +693,7 @@ init-bitbucket-completion()
 
 	echo "Logging into Bitbucket so we can list repositories..."
 	echo
-	read -p "Your Bitbucket username: " BBUSER
+	read -rp "Your Bitbucket username: " BBUSER
 	echo
 	echo "Now please visit:"
 	echo
@@ -685,10 +713,10 @@ init-bitbucket-completion()
 	echo
 	echo "Copy the newly generated password and paste it here."
 	echo ""
-	read -sp "Password (note: the typed characters won't show): " BBPASS; echo
+	read -rsp "Password (note: the typed characters won't show): " BBPASS; echo
 
 	# securely store the token and user to a netrc-formatted file
-	mkdir -p "$(dirname $GG_AUTH_bitbucket)"
+	mkdir -p "$(dirname "$GG_AUTH_bitbucket")"
 	rm -f "$GG_AUTH_bitbucket"
 	touch "$GG_AUTH_bitbucket"
 	chmod 600 "$GG_AUTH_bitbucket"
@@ -724,16 +752,17 @@ _bitbucket_call()
 
 	local url="https://api.bitbucket.org/$endpoint?pagelen=100&$options"
 
-	local tmp=$(mktemp)
+	local tmp
+	tmp=$(mktemp)
 	while [[ -n "$url" ]]; do
 		# download page
 		_bitbucket_curl -f -s "$url" > "$tmp" || { rm -f "$tmp"; return 1; }
 
 		# echo the content
-		cat "$tmp" | jq -r '.values'
+		jq -r '.values' "$tmp"
 
 		# find next page (jq trick from https://github.com/stedolan/jq/issues/354#issuecomment-43147898)
-		url=$(cat "$tmp" | jq -r '.next // empty')
+		url=$(jq -r '.next // empty' "$tmp")
 	done
 	rm -f "$tmp"
 }
@@ -765,7 +794,7 @@ _bitbucket_repo_list()
 _timeout()
 {
 	local seconds="$1"
-	while read -t $seconds -r line; do
+	while read -t "$seconds" -r line; do
 		echo "$line"
 	done
 	_dbg "exiting _timeout"
@@ -852,7 +881,7 @@ __mj_ssh_read()
 _ssh_ensure_started()
 {
 	local host="$1"
-	if [[ "$host" != ${__ssh_host} ]] || ! { /bin/echo '' >&217; } 2>/dev/null; then
+	if [[ "$host" != "${__ssh_host}" ]] || ! { /bin/echo '' >&217; } 2>/dev/null; then
 		_dbg "new connection for $host"
 		# close any open connection
 		__mj_ssh_stop
@@ -878,33 +907,6 @@ _ssh()
 	__mj_ssh_write "(" "$@" ")" || { _dbg "write failed"; __mj_ssh_stop; return 1; }
 
 	__mj_ssh_read || { _dbg "read failed"; __mj_ssh_stop; return 1; }
-}
-
-_new_test()
-{
-	local userhost=${1%%:*}
-	local path=${1#*:}
-
-	local dir pfix
-	[[ "$path" == */ ]] && { dir="$path"; pfix=; } || { dir=$(dirname $path); pfix=$(basename $path); }
-
-	local cmd;
-	read -r -d '' cmd <<-EOF
-		cd $dir && (
-			ls -aF1dL $pfix*/HEAD | sed -n 's|/HEAD[^/]*$||p';
-			ls -aF1dL $pfix*/.git | sed -n 's|/.git/$||p';
-			ls -aF1dL $pfix* | sed -n 's|/$||p'
-		) 2>/dev/null | sort | uniq -c | sed -nE 's| *2 (.*)|\1 |p; s| *1 (.*)|\1/|p'
-	EOF
-
-	echo "$cmd"
-
-	# grab all
-	local IFS=$'\n'
-	[[ $dir == "." ]] && dir=
-	echo "dir=$dir"
-	local res=$(_ssh "$userhost" "$cmd" | sed 's|^|'"$dir"'|')
-	echo "$res"
 }
 
 # Find completions for <fragment> on <host>, return them in ${COMPREPLY[@]}
@@ -949,9 +951,11 @@ _ssh_list_repos()
 	#echo "$cmd"
 
 	# grab all
-	local files=$(_ssh "$userhost" "$cmd")
+	local files
+	files=$(_ssh "$userhost" "$cmd")
 
-	COMPREPLY=($files)
+	# shellcheck disable=SC2206  # the expansion here is intentional
+	COMPREPLY=( $files )
 	#echo "===$files==="
 }
 
@@ -974,7 +978,8 @@ _complete_ssh_url()
 
 	# $cur may be [foo@]example.com:[dir]; check if that's the case
 	if [[ $cur != *:* ]]; then
-		local offers=( $(cut -d ' ' -f 2 "$recent" 2>/dev/null) )
+		local offers
+		__readlines offers < <(cut -d ' ' -f 2 "$recent" 2>/dev/null)
 		offers=( "${offers[@]/%/:}" )
 		#_dbg "offers=[${offers[*]}]"
 		__PREFIXES="$__PREFIXES ${offers[*]}"
@@ -990,7 +995,7 @@ _complete_ssh_url()
 	# autocomplete them.
 	if [[ ${#COMPREPLY[@]} != 0 ]]; then
 		#_dbg "recent=[$recent]"
-		mkdir -p $(dirname "$recent")
+		mkdir -p "$(dirname "$recent")"
 
 		local tmp="$recent.$$.$RANDOM.tmp"
 		cat "$recent" >"$tmp" 2>/dev/null
@@ -1028,10 +1033,10 @@ _refresh_repo_cache()
 	local CACHE="$3"
 
 	# create a temp file on the same filesystem as the destination file
-	mkdir -p $(dirname "$CACHE")
+	mkdir -p "$(dirname "$CACHE")"
 	local TMP="$CACHE.$$.$RANDOM.tmp"
 
-	_${service}_repo_list "$ORG" > "$TMP"
+	"_${service}_repo_list" "$ORG" > "$TMP"
 
 	# atomic update
 	mv "$TMP" "$CACHE"
@@ -1069,13 +1074,13 @@ _get_repo_list()
 				printf '\b\b%s ' "${marks[i % ${#marks[@]}]}"
 			fi
 			sleep 0.1
-			let i++
+			(( i++ ))
 		done
 		[[ $i -gt $spinstart ]] && printf '\b\b  \b\b'
 	fi
 
 	# return the list of repos
-	REPOS=( $( cat "$CACHE" 2>/dev/null ) )
+	__readlines REPOS < "$CACHE"
 }
 
 #
@@ -1113,8 +1118,9 @@ _complete_fragment()
 	local urlbase="$2"
 	local URL="$3"
 
-	local chost=$(_resolve_var "GG_CANONICAL_HOST_$service")
-	local GG_AUTH=$(_resolve_var "GG_AUTH_$service")
+	local chost GG_AUTH
+	chost=$(_resolve_var "GG_CANONICAL_HOST_$service")
+	GG_AUTH=$(_resolve_var "GG_AUTH_$service")
 
 #	echo service=$service urlbase=$urlbase URL=$URL chost=$chost GG_AUTH=$GG_AUTH
 
@@ -1129,7 +1135,7 @@ _complete_fragment()
 		local PROJECTS="${PROJECTS:-$HOME/projects}"
 		PROJECTS="$PROJECTS/$chost"
 
-		WORDS=( $(ls "$PROJECTS" 2>/dev/null) )
+		__readlines WORDS < <(ls "$PROJECTS" 2>/dev/null)
 		WORDS=( "${WORDS[@]/%//}" )
 	else
 		#
@@ -1137,7 +1143,6 @@ _complete_fragment()
 		#
 		IFS='/' read -ra arr <<< "$URL"
 		ORG=${arr[0]}
-		REPO=${arr[1]}
 
 		if [[ ! -f "$GG_AUTH" ]]; then
 			# short-circuit if we haven't authenticated, with
@@ -1165,7 +1170,7 @@ _complete_fragment()
 	done
 
 	# user-friendly completions and colon handling
-	compreply=( ${COMPREPLY[@]} )			# this is to be shown to the user
+	compreply=( "${COMPREPLY[@]}" )			# this is to be shown to the user
 	COMPREPLY=("${COMPREPLY[@]/#/$urlbase}")
 	__mj_ltrim_completions "$cur"			# these are the actual completions
 	_fancy_autocomplete
@@ -1194,13 +1199,14 @@ _complete_url()
 	local cur="$2"
 	shift; shift
 
-	local prefixes=$(_resolve_var __${service}_PREFIXES)
+	local prefixes
+	prefixes=$(_resolve_var "__${service}_PREFIXES")
 
 	local urlbase=
 	for urlbase in $prefixes "$@"; do
 		[[ $cur != "$urlbase"* ]] && continue
 
-		_complete_fragment $service "$urlbase" "${cur#"$urlbase"}"
+		_complete_fragment "$service" "$urlbase" "${cur#"$urlbase"}"
 		return
 	done
 
@@ -1230,7 +1236,7 @@ __check_and_download_update()
 	fi
 
 	# to avoid having multiple instances downloading the same file
-	mkdir -p $(dirname "$GG_NEW_VERSION")
+	mkdir -p "$(dirname "$GG_NEW_VERSION")"
 	touch "$GG_NEW_VERSION"
 
 	# download the current version
@@ -1277,7 +1283,7 @@ gg-stop()
 {
 	rm -f "$GG_NEW_VERSION"
 
-	mkdir -p $(dirname "$GG_NO_UPDATE_MARKER")
+	mkdir -p "$(dirname "$GG_NO_UPDATE_MARKER")"
 	touch "$GG_NO_UPDATE_MARKER"
 
 	echo "git-clone-completions: won't check for updates going forward."
@@ -1297,7 +1303,7 @@ __check_update()
 	      -s "$GG_NEW_VERSION" &&
 	      -z $(find "$nagfile" -newermt "$GG_UPDATE_NAG_INTERVAL" 2>/dev/null)
 	]]; then
-		mkdir -p $(basename "$nagfile")
+		mkdir -p "$(basename "$nagfile")"
 		touch "$nagfile"
 
 		echo "message: new git-clone-completions available; run gg-update to update. run gg-stop to stop update checks." 1>&2
@@ -1327,7 +1333,7 @@ if ! hash jq 2>/dev/null; then
 	echo "error $_msg: ***   on Fedora, run:       \`sudo dnf install jq\`              ***" 1>&2
 	echo "error $_msg: *** or download a pre-built binary from:                       ***" 1>&2
 	echo "error $_msg: ***   https://stedolan.github.io/jq/download/                  ***" 1>&2
-	let _msg++
+	(( _msg++ ))
 fi
 
 # Enable completion for:
@@ -1347,7 +1353,7 @@ else
 	echo "warning $_msg: *** a) ensure that git completion scripts are sourced _after_ this script, and/or..." 1>&2
 	echo "warning $_msg: *** b) see https://stackoverflow.com/questions/12399002/how-to-configure-git-bash-command-line-completion" 1>&2
 	echo "warning $_msg: ***    for how to set up git completion." 1>&2
-	let _msg++
+	(( _msg++ ))
 
 	# no git autocompletions; add shims and declare we'll autocomplete 'git'
 	_mj_git_clone_orig() { : ; }
@@ -1355,8 +1361,8 @@ else
 	_git()
 	{
 		# get a sane decomposition of the command line,
-		local cur words cword prev
-		_mj_get_comp_words_by_ref -n "=:@" cur words cword prev
+		local cur words cword
+		_mj_get_comp_words_by_ref -n "=:@" cur words cword
 
 #		echo
 #		echo cur=$cur
@@ -1399,25 +1405,26 @@ _git_clone()
 
 	# ensure a sane decomposition of the command line,
 	# we have to do this again here as Ubuntu puts @ into $COMP_WORDBREAKS (sigh...)
-	local cur words cword prev
-	_mj_get_comp_words_by_ref -n "=:@" cur words cword prev
+	local cur words cword
+	_mj_get_comp_words_by_ref -n "=:@" cur words cword
 
 	# see if we're completing the second positional argument ('git clone <URL>')
-	__arg_index $(git clone --git-completion-helper 2>/dev/null)
+	__arg_index "$(git clone --git-completion-helper 2>/dev/null)"
 	[[ $argidx -ne 2 ]] && return
 
 	# Try to complete service URLs
-	local __PREFIXES=()
+	local __PREFIXES=""
 	local service
-	for service in ${__SERVICES[@]}; do
-		_complete_url $service "$cur" && return
+	for service in "${__SERVICES[@]}"; do
+		_complete_url "$service" "$cur" && return
 	done
 
 	# Try SSH autocomplete
 	_complete_ssh_url "$cur" && return
 
 	# Begin autocompleting towards a fully qualified http[s]://github.com/org/repo and git@github.com:org/repo forms
-	COMPREPLY=($(compgen -W "$__PREFIXES" "$cur"))
+	# shellcheck disable=SC2207  # __PREFIXES don't contain whitespaces, we want wordsplitting here
+	COMPREPLY=( $(compgen -W "$__PREFIXES" "$cur") )
 	_colon_autocomplete
 }
 
@@ -1425,13 +1432,13 @@ _git_clone()
 _git_get()
 {
 	# ensure a sane decomposition of the command line,
-	local cur words cword prev
-	_mj_get_comp_words_by_ref -n "=:@" cur words cword prev
+	local cur words cword
+	_mj_get_comp_words_by_ref -n "=:@" cur words cword
 
 	# see if we're completing the apropriate positional argument
-	__arg_index $(git clone --git-completion-helper 2>/dev/null)
+	__arg_index "$(git clone --git-completion-helper 2>/dev/null)"
 
-	local prog=$(basename ${words[0]})
+	local prog=$(basename "${words[0]}")
 
 	# 'git-get <URL>'
 	[[ $prog == "git-get" && $argidx -eq 1 ]] && { _complete_url github "$cur" ""; return; }
@@ -1454,21 +1461,23 @@ _git_get_unit_test()
 			COMPREPLY_TRUE=( "mjuric/lsd" "mjuric/lsd-setup" " ")
 			for url in "mjuric/lsd" "git@github.com:mjuric/lsd" "https://github.com/mjuric/lsd" "http://github.com/mjuric/lsd"; do
 				COMPREPLY=()
+				# shellcheck disable=SC2206
 				COMP_WORDS=($cmd $opts $url)
 				COMP_CWORD=$(( ${#COMP_WORDS[@]} - 1)) _git_get
 				# compare the output vs expectation
 				diff=$(diff <(printf "%s\n" "${COMPREPLY_TRUE[@]}") <(printf "%s\n" "${COMPREPLY[@]}"))
-				[[ -n "$diff" ]] && { echo "[🛑] error: ${COMP_WORDS[@]} returned wrong completions" $'\n' "$diff"; return; }
-				echo "[✔] ${COMP_WORDS[@]}"
+				[[ -n "$diff" ]] && { echo "[🛑] error: ${COMP_WORDS[*]} returned wrong completions" $'\n' "$diff"; return; }
+				echo "[✔] ${COMP_WORDS[*]}"
 			done
 
 			# test completions that should fail
 			for url in "./mjuric/lsd" "a/b/c" "git@github.com"; do
 				COMPREPLY=()
+				# shellcheck disable=SC2206
 				COMP_WORDS=($cmd $opts $url)
 				COMP_CWORD=$(( ${#COMP_WORDS[@]} - 1)) _git_get
-				[[ ${#COMPREPLY[@]} == 0 ]] || { echo "[🛑] error: ${COMP_WORDS[@]} should've returned zero completions"; printf "%s\n" "${COMPREPLY[@]}"; return; }
-				echo "[✔] ${COMP_WORDS[@]}"
+				[[ ${#COMPREPLY[@]} == 0 ]] || { echo "[🛑] error: ${COMP_WORDS[*]} should've returned zero completions"; printf "%s\n" "${COMPREPLY[@]}"; return; }
+				echo "[✔] ${COMP_WORDS[*]}"
 			done
 		done
 	done
