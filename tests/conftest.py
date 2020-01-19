@@ -204,11 +204,11 @@ def _bash_aux(request, bashpath, homedir, wordbreaks, git_completion):
                 bash.run(f"source '{git_completion}'", expect_output=False)
 
             # install the library
-            out = bash.run(f"source '{_TESTDIR}/../git-clone-completions.bash'", expect_output=not bash.git_completion)
+            out = bash.run(f"source '{_TESTDIR}/../git-clone-completion.bash'", expect_output=not bash.git_completion)
             if out:
                 assert out.startswith("\r\nwarning 1: *** no git autocompletion found"), "expected a warning message about no git autocompletion"
 
-            # Load bashrc defs for testing and git-clone-completions
+            # Load bashrc defs for testing and git-clone-completion
             bash.run(f"source '{bashrc}'")
 
             with assert_unmodified_env(bash, ignore=ignore_env):

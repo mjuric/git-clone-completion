@@ -28,7 +28,7 @@ class TestGitHub:
         bash.expect('Your GitHub username: ')
         bash.sendline(username)
 
-        auth_loc = f"{bash.homedir}/.config/git-clone-completions/github.auth.netrc"
+        auth_loc = f"{bash.homedir}/.config/git-clone-completion/github.auth.netrc"
         expect = f"Authentication setup complete; token stored to '{auth_loc}'"
         bash.expect_exact(expect)
         bash.expect_exact(bash.PS1)

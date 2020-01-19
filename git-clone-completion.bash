@@ -19,8 +19,8 @@ __gg_setup()
 	local xdg_config_home=${XDG_CONFIG_HOME:-$HOME/.config}
 	local xdg_cache_home=${XDG_CACHE_HOME:-$HOME/.cache}
 
-	GG_CFGDIR=${GG_CFGDIR:-$xdg_config_home/git-clone-completions}
-	GG_CACHEDIR=${GG_CACHEDIR:-$xdg_cache_home/git-clone-completions}
+	GG_CFGDIR=${GG_CFGDIR:-$xdg_config_home/git-clone-completion}
+	GG_CACHEDIR=${GG_CACHEDIR:-$xdg_cache_home/git-clone-completion}
 }
 __gg_setup
 unset -f __gg_setup
@@ -577,7 +577,7 @@ init-gitlab-completion()
 		echo
 		echo "and generate a new personal access token:"
 		echo
-		echo "    1. Under 'Name', write 'git-clone-completions access for $USER@$(hostname)'"
+		echo "    1. Under 'Name', write 'git-clone-completion access for $USER@$(hostname)'"
 		echo "    2. Leave 'Expires at' empty"
 		echo "    3. Under 'Scopes', check 'api' and leave others unchecked."
 		echo
@@ -671,7 +671,7 @@ init-github-completion()
 		echo
 		echo "and generate a new personal access token:"
 		echo
-		echo "    1. Under 'Note', write 'git-clone-completions access for $USER@$(hostname)'"
+		echo "    1. Under 'Note', write 'git-clone-completion access for $USER@$(hostname)'"
 		echo "    2. Under 'Select scopes', check 'repo' and leave otherwise unchecked."
 		echo
 		echo "Then click the 'Generate Token' green button (bottom of the page)."
@@ -797,7 +797,7 @@ init-bitbucket-completion()
 		echo
 		echo "to generate a new 'app password':"
 		echo
-		echo "    1. Under 'Label', write 'git-clone-completions access for $USER@$(hostname)'"
+		echo "    1. Under 'Label', write 'git-clone-completion access for $USER@$(hostname)'"
 		echo "    2. Under 'Permissions', check:"
 		echo "       a) 'Read' under 'Account'"
 		echo "       b) 'Read' under 'Projects'"
@@ -1351,7 +1351,7 @@ _complete_url()
 #################
 
 GG_NO_UPDATE_MARKER="$GG_CFGDIR/no-update-checks"
-GG_NEW_VERSION="$GG_CACHEDIR/git-clone-completions.bash"
+GG_NEW_VERSION="$GG_CACHEDIR/git-clone-completion.bash"
 GG_SELF="${BASH_SOURCE[0]}"
 #GG_UPDATE_CHECK_INTERVAL='-1 weeks'
 #GG_UPDATE_NAG_INTERVAL='-1 weeks'
@@ -1372,7 +1372,7 @@ __check_and_download_update()
 	# download the current version
 	local tmp="$GG_NEW_VERSION.$$.$RANDOM.tmp"
 
-	if curl -f -s "https://raw.githubusercontent.com/mjuric/git-utils/master/git-clone-completions.bash" -o "$tmp" >/dev/null 1>&2 &&	# download
+	if curl -f -s "https://raw.githubusercontent.com/mjuric/git-utils/master/git-clone-completion.bash" -o "$tmp" >/dev/null 1>&2 &&	# download
 	   [[ -s "$tmp" ]] &&				# continue if not empty
 	   ! cmp -s "$GG_SELF" "$tmp" 2>/dev/null &&	# continue if not the same
 	   bash -n "$tmp" 2>/dev/null;			# continue if not malformed
@@ -1387,12 +1387,12 @@ __check_and_download_update()
 gg-update()
 {
 	if [[ ! -f "$GG_NEW_VERSION" ]]; then
-		echo "git-clone-completions: no new version available for update." 1>&2
+		echo "git-clone-completion: no new version available for update." 1>&2
 		return
 	fi
 
 	# save a backup
-	local backup="$GG_CACHEDIR/git-clone-completions.bash.$(date)"
+	local backup="$GG_CACHEDIR/git-clone-completion.bash.$(date)"
 	cp -a "$GG_SELF" "$backup"
 
 	echo
@@ -1406,7 +1406,7 @@ gg-update()
 	echo "   mv '$GG_NEW_VERSION' '$GG_SELF'"
 	echo
 	echo "to update."
-	#echo "git-clone-completions: update complete! source $SELF to activate."
+	#echo "git-clone-completion: update complete! source $SELF to activate."
 }
 
 gg-stop()
@@ -1416,7 +1416,7 @@ gg-stop()
 	mkdir -p "$(dirname "$GG_NO_UPDATE_MARKER")"
 	touch "$GG_NO_UPDATE_MARKER"
 
-	echo "git-clone-completions: won't check for updates going forward."
+	echo "git-clone-completion: won't check for updates going forward."
 }
 
 __check_update()
@@ -1436,7 +1436,7 @@ __check_update()
 		mkdir -p "$(basename "$nagfile")"
 		touch "$nagfile"
 
-		echo "message: new git-clone-completions available; run gg-update to update. run gg-stop to stop update checks." 1>&2
+		echo "message: new git-clone-completion available; run gg-update to update. run gg-stop to stop update checks." 1>&2
 	fi
 }
 

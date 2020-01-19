@@ -37,6 +37,6 @@ class TestSSH:
             assert bash.complete("git clone test-dummy-0") == [ 'test-dummy-0:' ], f"Unexpected completion for `{cmdline}`"
             assert bash.complete("git clone test-dummy-1") == [], f"Didn't expire a host from cache"
         except:
-            with open(f'{bash.homedir}/.cache/git-clone-completions/ssh.recent') as fp:
+            with open(f'{bash.homedir}/.cache/git-clone-completion/ssh.recent') as fp:
                 print(fp.read())
             raise
