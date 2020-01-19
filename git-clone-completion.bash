@@ -737,6 +737,8 @@ _github_repo_list()
 	local data result
 
 	while [[ $hasNextPage == true ]]; do
+		# __github_list_repos_query is defined using defgraphql:
+		# shellcheck disable=SC2154
 		read -r -d '' data <<-EOF
 			{
 				"query": "$__github_list_repos_query",
@@ -1227,6 +1229,7 @@ _resolve_var() { echo "${!1}"; }
 
 # escape special characters in a string with backslashes
 _esc_string() {
+	# shellcheck disable=SC1003,SC2089
 	local _scp_path_esc='[][(){}<>",:;^&!$=?`|\\'"'"'[:space:]]'
 	sed -e 's/'$_scp_path_esc'/\\&/g'
 }
@@ -1257,6 +1260,7 @@ _complete_fragment()
 
 		# list only directories that don't contain spaces from "$PROJECTS"
 		# because we use ls -F, they'll have a slash (/) appended
+		# shellcheck disable=SC2012
 		__readlines WORDS < <( ls -1LF "$PROJECTS" 2>/dev/null | sed -e '/[^\/]$/d' -e '/[ ]/d' )
 
 		if [[ ${#WORDS[@]} == 0 ]]; then
@@ -1528,15 +1532,8 @@ complete -o bashdefault -o default -o nospace -F _git_get git-get 2>/dev/null \
 #                                       #
 #########################################
 
-_git_clone()
-{
-#	trap '{ export > /tmp/fooo; }' SIGINT
-	_git_clone_aux "$@"
-#	trap - SIGINT
-}
-
 # redefine _git_clone to auto-complete the first positional argument
-_git_clone_aux()
+_git_clone()
 {
 	# try standard completions, return if successful
 	_mj_git_clone_orig
@@ -1573,6 +1570,7 @@ _git_clone_aux()
 		_complete_ssh_url -p "$cur"
 	fi
 
+	# shellcheck disable=SC2207  # __PREFIXES don't contain whitespaces, we want wordsplitting here
 	COMPREPLY=( $(compgen -W "$__PREFIXES" "$cur") )
 	_colon_autocomplete
 	_dbg "_git_clone COMPREPLY=${COMPREPLY[*]}"
