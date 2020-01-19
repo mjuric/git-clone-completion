@@ -1,0 +1,38 @@
+# bashrc file for bash-completion test suite
+
+# Use emacs key bindings
+set -o emacs
+
+# Unset `command_not_found_handle' as defined on Debian/Ubuntu, because this
+# troubles and slows down testing
+unset -f command_not_found_handle
+
+export PS2='> '
+
+# For clean test state, avoid sourcing user's ~/.bash_completion
+export BASH_COMPLETION_USER_FILE=/dev/null
+
+# ...and avoid stuff in BASH_COMPLETION_USER_DIR and system install locations
+# overriding in-tree completions. Setting the user dir would otherwise suffice,
+# but simple xspec completions are only installed if a separate one is not
+# found in any completion dirs. Therefore we also point the "system" dirs to
+# locations that should not yield valid completions and helpers paths either.
+export BASH_COMPLETION_USER_DIR=$(cd "$SRCDIR/.."; pwd)
+# /var/empty isn't necessarily actually always empty :P
+export BASH_COMPLETION_COMPAT_DIR=/var/empty/bash_completion.d
+
+# Make sure default settings are in effect
+unset -v \
+    COMP_CONFIGURE_HINTS \
+    COMP_CVS_REMOTE \
+    COMP_KNOWN_HOSTS_WITH_HOSTFILE \
+    COMP_TAR_INTERNAL_PATHS
+
+#export GG_SILENT=1
+
+echo "** testsuite: loaded expect tweaks from ${BASH_SOURCE[0]}"
+
+# Local variables:
+# mode: shell-script
+# End:
+# ex: filetype=sh
