@@ -14,8 +14,16 @@
 #
 # configuration
 #
-GG_CFGDIR=${XDG_CONFIG_HOME:-$HOME/.config/git-clone-completions}
-GG_CACHEDIR=${XDG_CACHE_HOME:-$HOME/.cache/git-clone-completions}
+__gg_setup()
+{
+	local xdg_config_home=${XDG_CONFIG_HOME:-$HOME/.config}
+	local xdg_cache_home=${XDG_CACHE_HOME:-$HOME/.cache}
+
+	GG_CFGDIR=${GG_CFGDIR:-$xdg_config_home/git-clone-completions}
+	GG_CACHEDIR=${GG_CACHEDIR:-$xdg_cache_home/git-clone-completions}
+}
+__gg_setup
+unset -f __gg_setup
 
 #############################
 #                           #
@@ -144,10 +152,10 @@ _mj_get_comp_words_by_ref ()
 # current word within that list, if the current word is a
 # positional argument.
 #
-# If $cword is a positional argument sets $argidx to its index
+# If $cword is a positional argument sets %_argidx to its index
 # ignoring any options that may have been specified before it.
 # If $cword is not a positional argument (e.g., it's an option
-# or an option's argument), sets $argidx to empty
+# or an option's argument), sets %_argidx to empty
 #
 # arguments: list of options that admit an argument, suffixed by '='
 #
@@ -170,9 +178,9 @@ _mj_get_comp_words_by_ref ()
 __arg_index()
 {
 	# returned list of positional arguments
-	posargs=( "${words[0]}" )
+	_posargs=( "${words[0]}" )
 
-	local c p i idx=0
+	local c p i o idx=0
 	for i in $(seq 1 $cword); do
 		p=${words[i-1]}	# previous word
 		c=${words[i]}	# current word
@@ -187,11 +195,11 @@ __arg_index()
 		# a positional argument
 		o=0
 		idx=$((idx+1))
-		posargs+=( "$c" )
+		_posargs+=( "$c" )
 	done
 
-	# set $argidx only if the current word was an argument
-	[[ $o == 0 ]] && argidx=$idx || argidx=
+	# set %_argidx only if the current word was an argument
+	[[ $o == 0 ]] && _argidx=$idx || _argidx=
 }
 
 # find and echo the common prefix of passed arguments
@@ -205,6 +213,7 @@ __mj_common_prefix()
 	shift
 	for ((i = 0; i < ${#first}; ++i)); do
 		prefix=${first:0:i+1}
+		_dbg "PREFIX: $prefix"
 		for v; do
 			if [[ ${v:0:i+1} != "$prefix" ]]; then
 				echo "${first:0:i}"
@@ -223,6 +232,21 @@ __mj_common_prefix()
 _dbg()
 {
 	[[ -n $GG_DEBUG ]] && echo "[$(date)]" "$@" >> "$GG_DEBUG"
+}
+
+# _msg <warning|error> <text>
+__msg_cnt=1
+_msg()
+{
+	[[ -n $GG_SILENT ]] && return
+
+	local _type="$1"
+
+	[[ ${__msg_cnt} -ne 1 ]] && echo 1>&2
+
+	sed -e "s/^/$_type $__msg_cnt: *** /" 1>&2
+
+	(( __msg_cnt++ ))
 }
 
 #
@@ -348,7 +372,15 @@ _fancy_autocomplete()
 	# suggestions (so send it the autocompletion text).
 	local prefix
 	prefix=$(__mj_common_prefix "${COMPREPLY[@]}")
-	[[ "$prefix" != "${cur#*[$COMP_WORDBREAKS]}" ]] && return
+
+	# bugfix for bash 3.2 (macOS): the delimiter is a part of the word if it's not ':'
+	local curtrm="${cur#*[$COMP_WORDBREAKS]}"
+	local len="${#curtrm}"
+	local char="${cur:(-len-1):1}"
+	[[ "$char" != ':' ]] && curtrm="$char$curtrm"
+	#
+
+	[[ "$prefix" != "$curtrm" ]] && return
 
 	# Not possible to autocomplete beyond what's currently been
 	# typed, so bash will show suggestions. Send the human-readable
@@ -520,24 +552,31 @@ GG_CANONICAL_HOST_gitlab="gitlab.com"
 #
 init-gitlab-completion()
 {
-	echo "Logging into GitLab so we can list repositories..."
-	echo "Please visit:"
-	echo
-	echo "    https://gitlab.com/profile/personal_access_tokens"
-	echo
-	echo "and generate a new personal access token:"
-	echo
-	echo "    1. Under 'Name', write 'git-clone-completions access for $USER@$(hostname)'"
-	echo "    2. Leave 'Expires at' empty"
-	echo "    3. Under 'Scopes', check 'api' and leave others unchecked."
-	echo
-	echo "Then click the 'Create personal access token' button (below the form)."
-	echo
-	echo "The PAT is equivalent to a password we can use to list repositories in your GitLab account."
-	echo "Copy the newly generated token and paste it here."
-	echo ""
-	read -rsp "Token (note: the typed characters won't show): " TOKEN; echo
-	read -rp  "Your GitLab username: " GLUSER
+	local GLUSER TOKEN
+
+	if [[ $# != 2 ]]; then
+		echo "Logging into GitLab so we can list repositories..."
+		echo "Please visit:"
+		echo
+		echo "    https://gitlab.com/profile/personal_access_tokens"
+		echo
+		echo "and generate a new personal access token:"
+		echo
+		echo "    1. Under 'Name', write 'git-clone-completions access for $USER@$(hostname)'"
+		echo "    2. Leave 'Expires at' empty"
+		echo "    3. Under 'Scopes', check 'api' and leave others unchecked."
+		echo
+		echo "Then click the 'Create personal access token' button (below the form)."
+		echo
+		echo "The PAT is equivalent to a password we can use to list repositories in your GitLab account."
+		echo "Copy the newly generated token and paste it here."
+		echo ""
+		read -rsp "Token (note: the typed characters won't show): " TOKEN; echo
+		read -rp  "Your GitLab username: " GLUSER
+	else
+		GLUSER="$1"
+		TOKEN="$2"
+	fi
 
 	# securely store the token and user to a netrc-formatted file
 	mkdir -p "$(dirname "$GG_AUTH_gitlab")"
@@ -607,23 +646,30 @@ GG_CANONICAL_HOST_github="github.com"
 #
 init-github-completion()
 {
-	echo "Logging into github so we can list repositories..."
-	echo "Please visit:"
-	echo
-	echo "    https://github.com/settings/tokens/new"
-	echo
-	echo "and generate a new personal access token:"
-	echo
-	echo "    1. Under 'Note', write 'git-clone-completions access for $USER@$(hostname)'"
-	echo "    2. Under 'Select scopes', check 'repo:status' and leave otherwise unchecked."
-	echo
-	echo "Then click the 'Generate Token' green button (bottom of the page)."
-	echo
-	echo "The PAT is equivalent to a password we can use to list repositories in your github account."
-	echo "Copy the newly generated token and paste it here."
-	echo ""
-	read -rsp "Token (note: the typed characters won't show): " TOKEN; echo
-	read -rp "Your GitHub username: " GHUSER
+	local GHUSER TOKEN
+
+	if [[ $# != 2 ]]; then
+		echo "Logging into github so we can list repositories..."
+		echo "Please visit:"
+		echo
+		echo "    https://github.com/settings/tokens/new"
+		echo
+		echo "and generate a new personal access token:"
+		echo
+		echo "    1. Under 'Note', write 'git-clone-completions access for $USER@$(hostname)'"
+		echo "    2. Under 'Select scopes', check 'repo:status' and leave otherwise unchecked."
+		echo
+		echo "Then click the 'Generate Token' green button (bottom of the page)."
+		echo
+		echo "The PAT is equivalent to a password we can use to list repositories in your github account."
+		echo "Copy the newly generated token and paste it here."
+		echo ""
+		read -rsp "Token (note: the typed characters won't show): " TOKEN; echo
+		read -rp "Your GitHub username: " GHUSER
+	else
+		GHUSER="$1"
+		TOKEN="$2"
+	fi
 
 	# securely store the token and user to a netrc-formatted file
 	mkdir -p "$(dirname "$GG_AUTH_github")"
@@ -691,29 +737,34 @@ init-bitbucket-completion()
 {
 	local BBUSER BBPASS
 
-	echo "Logging into Bitbucket so we can list repositories..."
-	echo
-	read -rp "Your Bitbucket username: " BBUSER
-	echo
-	echo "Now please visit:"
-	echo
-	echo "    https://bitbucket.org/account/user/$BBUSER/app-passwords/new"
-	echo
-	echo "to generate a new 'app password':"
-	echo
-	echo "    1. Under 'Label', write 'git-clone-completions access for $USER@$(hostname)'"
-	echo "    2. Under 'Permissions', check:"
-	echo "       a) 'Read' under 'Account'"
-	echo "       b) 'Read' under 'Projects'"
-	echo
-	echo "and leave others unchecked. Then click the 'Create' button."
-	echo
-	echo "This is an app-specific password which we will use to list repositories"
-	echo "in your GitLab account."
-	echo
-	echo "Copy the newly generated password and paste it here."
-	echo ""
-	read -rsp "Password (note: the typed characters won't show): " BBPASS; echo
+	if [[ $# != 2 ]]; then
+		echo "Logging into Bitbucket so we can list repositories..."
+		echo
+		read -rp "Your Bitbucket username: " BBUSER
+		echo
+		echo "Now please visit:"
+		echo
+		echo "    https://bitbucket.org/account/user/$BBUSER/app-passwords/new"
+		echo
+		echo "to generate a new 'app password':"
+		echo
+		echo "    1. Under 'Label', write 'git-clone-completions access for $USER@$(hostname)'"
+		echo "    2. Under 'Permissions', check:"
+		echo "       a) 'Read' under 'Account'"
+		echo "       b) 'Read' under 'Projects'"
+		echo
+		echo "and leave others unchecked. Then click the 'Create' button."
+		echo
+		echo "This is an app-specific password which we will use to list repositories"
+		echo "in your GitLab account."
+		echo
+		echo "Copy the newly generated password and paste it here."
+		echo ""
+		read -rsp "Password (note: the typed characters won't show): " BBPASS; echo
+	else
+		BBUSER="$1"
+		BBPASS="$2"
+	fi
 
 	# securely store the token and user to a netrc-formatted file
 	mkdir -p "$(dirname "$GG_AUTH_bitbucket")"
@@ -799,6 +850,11 @@ _timeout()
 	done
 	_dbg "exiting _timeout"
 }
+
+# variables holding the global state for SSH connections
+__ssh_msg_sentinel=
+__ssh_fifo=
+__ssh_host=
 
 # __mj_ssh_start <host>
 __mj_ssh_start()
@@ -965,6 +1021,9 @@ _ssh_list_repos()
 # args:
 #       $cur
 #
+# opts:
+#      -p  -- only add prefixes to __PREFIXES, don't match URL
+#
 # returns:
 #	COMPREPLY
 #	Adds own prefixes to __PREFIXES
@@ -973,11 +1032,15 @@ _ssh_list_repos()
 #
 _complete_ssh_url()
 {
+	local prefix_only=
+	[[ "$1" == "-p" ]] && { prefix_only=1; shift; }
+
 	local cur="$1"
 	local recent="$GG_CACHEDIR/ssh.recent"
 
 	# $cur may be [foo@]example.com:[dir]; check if that's the case
-	if [[ $cur != *:* ]]; then
+	_dbg "_complete_ssh_url: cur=$cur"
+	if [[ $cur != *:* || $prefix_only == 1 ]]; then
 		local offers
 		__readlines offers < <(cut -d ' ' -f 2 "$recent" 2>/dev/null)
 		offers=( "${offers[@]/%/:}" )
@@ -985,6 +1048,7 @@ _complete_ssh_url()
 		__PREFIXES="$__PREFIXES ${offers[*]}"
 		return 1
 	fi
+	_dbg "_complete_ssh_url: cur=$cur PASSED"
 
 	# autocomplete the path
 	start_spinner
@@ -1112,11 +1176,18 @@ _get_repo_list()
 #
 _resolve_var() { echo "${!1}"; }
 
+# escape special characters in a string with backslashes
+_esc_string() {
+	local _scp_path_esc='[][(){}<>",:;^&!$=?`|\\'"'"'[:space:]]'
+	sed -e 's/'$_scp_path_esc'/\\&/g'
+}
+
 _complete_fragment()
 {
 	local service="$1"
 	local urlbase="$2"
 	local URL="$3"
+	local WORDS
 
 	local chost GG_AUTH
 	chost=$(_resolve_var "GG_CANONICAL_HOST_$service")
@@ -1135,14 +1206,20 @@ _complete_fragment()
 		local PROJECTS="${PROJECTS:-$HOME/projects}"
 		PROJECTS="$PROJECTS/$chost"
 
-		__readlines WORDS < <(ls "$PROJECTS" 2>/dev/null)
-		WORDS=( "${WORDS[@]/%//}" )
+		# list only directories that don't contain spaces from "$PROJECTS"
+		# because we use ls -F, they'll have a slash (/) appended
+		__readlines WORDS < <( ls -1LF "$PROJECTS" 2>/dev/null | sed -e '/[^\/]$/d' -e '/[ ]/d' )
+
+		if [[ ${#WORDS[@]} == 0 ]]; then
+			# prevent bash from trying to autocomplete with a filename
+			COMPREPLY=("")
+			return
+		fi
 	else
 		#
 		# completing the repo: offer a list of repos available on the service
 		#
-		IFS='/' read -ra arr <<< "$URL"
-		ORG=${arr[0]}
+		local ORG="${URL%%/*}"
 
 		if [[ ! -f "$GG_AUTH" ]]; then
 			# short-circuit if we haven't authenticated, with
@@ -1156,6 +1233,7 @@ _complete_fragment()
 			return
 		fi
 
+		local REPOS
 		_get_repo_list "$service" "$ORG"
 		WORDS=( "${REPOS[@]/#/$ORG/}" )		# prepend the org name
 		WORDS=( "${WORDS[@]/%/ }" )		# append a space (so the suggestion completes the argument)
@@ -1163,17 +1241,20 @@ _complete_fragment()
 
 	# only return completions matching the typed prefix
 	COMPREPLY=()
-	for i in "${!WORDS[@]}"; do
-		if [[ ${WORDS[i]} == "$URL"* ]]; then
-			COMPREPLY+=("${WORDS[i]}")
+	local _word
+	for _word in "${WORDS[@]}"; do
+		if [[ "$_word" == "$URL"* ]]; then
+			COMPREPLY+=("$_word")
 		fi
 	done
 
 	# user-friendly completions and colon handling
-	compreply=( "${COMPREPLY[@]}" )			# this is to be shown to the user
+	local compreply=( "${COMPREPLY[@]}" )		# this is to be shown to the user
 	COMPREPLY=("${COMPREPLY[@]/#/$urlbase}")
 	__mj_ltrim_completions "$cur"			# these are the actual completions
 	_fancy_autocomplete
+#	WORDS=( "${COMPREPLY[@]/%/|}" )
+#	echo "${WORDS[@]}" 1>&2
 }
 
 # test if we're completing a fully qualified URL of $service, complete it
@@ -1349,11 +1430,12 @@ if declare -F _git > /dev/null; then
 	fi
 else
 	[[ _msg -ne 1 ]] && echo
-	echo "warning $_msg: *** no git autocompletion found; installing standalone one for git clone" 1>&2
-	echo "warning $_msg: *** a) ensure that git completion scripts are sourced _after_ this script, and/or..." 1>&2
-	echo "warning $_msg: *** b) see https://stackoverflow.com/questions/12399002/how-to-configure-git-bash-command-line-completion" 1>&2
-	echo "warning $_msg: ***    for how to set up git completion." 1>&2
-	(( _msg++ ))
+	_msg warning <<-EOF
+		no git autocompletion found; installing standalone one for git clone
+		a) ensure that git completion scripts are sourced _after_ this script, and/or...
+		b) see https://stackoverflow.com/questions/12399002/how-to-configure-git-bash-command-line-completion
+		    for how to set up git completion.
+	EOF
 
 	# no git autocompletions; add shims and declare we'll autocomplete 'git'
 	_mj_git_clone_orig() { : ; }
@@ -1375,10 +1457,11 @@ else
 #		echo
 
 		# find the second argument (the git subcommand)
+		local _argidx _posargs
 		__arg_index -C= -c= --exec-path= --git-dir= --work-tree= --namespace=
 
-		[[ ${posargs[1]} == "clone" ]] && _git_clone && return
-		[[ ${posargs[1]} == "get" ]] && _git_get && return
+		[[ ${_posargs[1]} == "clone" ]] && _git_clone && return
+		[[ ${_posargs[1]} == "get" ]] && _git_get && return
 	}
 
 	# Enable completion for git
@@ -1396,8 +1479,15 @@ complete -o bashdefault -o default -o nospace -F _git_get git-get 2>/dev/null \
 #                                       #
 #########################################
 
-# redefine _git_clone to auto-complete the first positional argument
 _git_clone()
+{
+#	trap '{ export > /tmp/fooo; }' SIGINT
+	_git_clone_aux "$@"
+#	trap - SIGINT
+}
+
+# redefine _git_clone to auto-complete the first positional argument
+_git_clone_aux()
 {
 	# try standard completions, return if successful
 	_mj_git_clone_orig
@@ -1409,8 +1499,9 @@ _git_clone()
 	_mj_get_comp_words_by_ref -n "=:@" cur words cword
 
 	# see if we're completing the second positional argument ('git clone <URL>')
+	local _argidx _posargs
 	__arg_index "$(git clone --git-completion-helper 2>/dev/null)"
-	[[ $argidx -ne 2 ]] && return
+	[[ $_argidx -ne 2 ]] && return
 
 	# Try to complete service URLs
 	local __PREFIXES=""
@@ -1419,13 +1510,23 @@ _git_clone()
 		_complete_url "$service" "$cur" && return
 	done
 
-	# Try SSH autocomplete
-	_complete_ssh_url "$cur" && return
-
 	# Begin autocompleting towards a fully qualified http[s]://github.com/org/repo and git@github.com:org/repo forms
 	# shellcheck disable=SC2207  # __PREFIXES don't contain whitespaces, we want wordsplitting here
 	COMPREPLY=( $(compgen -W "$__PREFIXES" "$cur") )
+
+	if [[ ${#COMPREPLY[@]} == 0 ]]; then
+		# Try SSH autocomplete if no other viable autocompletions exist
+		_complete_ssh_url "$cur" && return
+	else
+		# If other potential autocompletions _do_ exist, prevent SSH from
+		# interpreting them as hostnames (e.g., 'http://' or 'git@github'
+		# values of $cur would trigger SSH resolution )
+		_complete_ssh_url -p "$cur"
+	fi
+
+	COMPREPLY=( $(compgen -W "$__PREFIXES" "$cur") )
 	_colon_autocomplete
+	_dbg "_git_clone COMPREPLY=${COMPREPLY[*]}"
 }
 
 # git's autocompletion scripts will automatically invoke _git_get() for 'get' subcommand
@@ -1436,15 +1537,16 @@ _git_get()
 	_mj_get_comp_words_by_ref -n "=:@" cur words cword
 
 	# see if we're completing the apropriate positional argument
+	local _argidx _posargs
 	__arg_index "$(git clone --git-completion-helper 2>/dev/null)"
 
 	local prog=$(basename "${words[0]}")
 
 	# 'git-get <URL>'
-	[[ $prog == "git-get" && $argidx -eq 1 ]] && { _complete_url github "$cur" ""; return; }
+	[[ $prog == "git-get" && $_argidx -eq 1 ]] && { _complete_url github "$cur" ""; return; }
 
 	# 'git get <URL>'
-	[[ $prog != "git-get" && $argidx -eq 2 ]] && { _complete_url github "$cur" ""; return; }
+	[[ $prog != "git-get" && $_argidx -eq 2 ]] && { _complete_url github "$cur" ""; return; }
 }
 
 ###############
@@ -1485,18 +1587,20 @@ _git_get_unit_test()
 
 _arg_index_unit_test()
 {
+	local _argidx _posargs
+
 	COMP_WORDS=(git clone --test foo)
 	COMP_CWORD=$(( ${#COMP_WORDS[@]} - 1))
-	__arg_index "--foo= --bar= --baz="; [[ $argidx == 2 ]] || { echo "test failed at line $LINENO"; return; }
-	__arg_index --test=;                [[ -z $argidx ]]   || { echo "test failed at line $LINENO"; return; }
+	__arg_index "--foo= --bar= --baz="; [[ $_argidx == 2 ]] || { echo "test failed at line $LINENO"; return; }
+	__arg_index --test=;                [[ -z $_argidx ]]   || { echo "test failed at line $LINENO"; return; }
 
 	COMP_WORDS=(git clone --test foo -k)
 	COMP_CWORD=$(( ${#COMP_WORDS[@]} - 1))
-	__arg_index --foo= --bar= --baz=;   [[ -z $argidx ]]   || { echo "test failed at line $LINENO"; return; }
+	__arg_index --foo= --bar= --baz=;   [[ -z $_argidx ]]   || { echo "test failed at line $LINENO"; return; }
 
 	COMP_WORDS=(git clone --test foo -k bar)
 	COMP_CWORD=$(( ${#COMP_WORDS[@]} - 1))
-	__arg_index --test=;                [[ $argidx == 2 ]] || { echo "test failed at line $LINENO"; return; }
+	__arg_index --test=;                [[ $_argidx == 2 ]] || { echo "test failed at line $LINENO"; return; }
 	
 	echo "[✔] __arg_index unit tests succeeded."
 }
