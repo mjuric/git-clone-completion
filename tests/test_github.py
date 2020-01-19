@@ -37,7 +37,7 @@ class TestGitHub:
         self._auth(bash)
 
         for cmdline, expected_result in [
-            ("git clone git@github.com:gh-test-acc/", ['gh-test-acc/fomatic', 'gh-test-acc/foobar', 'gh-test-acc/foo', 'gh-test-acc/bar']),
+            ("git clone git@github.com:gh-test-acc/", ['gh-test-acc/fomatic', 'gh-test-acc/foobar', 'gh-test-acc/foo', 'gh-test-acc/bar', 'gh-test-acc/private-repo']),
             ("git clone git@github.com:gh-test-acc/b", ['git@github.com:gh-test-acc/bar '])
         ]:
             expected_result.sort()

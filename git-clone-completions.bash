@@ -494,11 +494,11 @@ stop_spinner()
 }
 
 
-#######################################
-#                                     #
-#         REST Call Utilities         #
-#                                     #
-#######################################
+###################################################
+#                                                 #
+#         REST and GraphQL Call Utilities         #
+#                                                 #
+###################################################
 
 # call an endpoint and retrieve the full result.
 # reads all pages if the result is paginated and has the
@@ -523,6 +523,21 @@ _rest_call()
 	done
 	rm -f "$tmp"
 }
+
+#
+# Store a graphql query into a variable $varname in a format
+# that's ready to be sent as a javascript string (w/o newlines)
+#
+# usage: defgraphql <varname> <<-'EOF' ... query text ... EOF
+#
+defgraphql()
+{
+	# squash the graphql text into a single line (as Javascript
+	# doesn't allow multiline strings) and assign it to
+	# variable $1
+	read -r -d '' "$1" < <(tr -s ' \t\n' ' ')
+}
+
 
 ########################################################################
 #
@@ -657,7 +672,7 @@ init-github-completion()
 		echo "and generate a new personal access token:"
 		echo
 		echo "    1. Under 'Note', write 'git-clone-completions access for $USER@$(hostname)'"
-		echo "    2. Under 'Select scopes', check 'repo:status' and leave otherwise unchecked."
+		echo "    2. Under 'Select scopes', check 'repo' and leave otherwise unchecked."
 		echo
 		echo "Then click the 'Generate Token' green button (bottom of the page)."
 		echo
@@ -691,28 +706,62 @@ init-github-completion()
 	fi
 }
 
-# curl call with github authentication
-_github_curl()
-{
-	curl --netrc-file "$GG_AUTH_github" "$@"
-}
-
-# _github_call <endpoint> <options>
 #
-# example: _github_call groups/github-org/projects simple=true
+# GraphQL query returning all repositories with given user/org.
+# used by _github_repo_list()
 #
-_github_call()
-{
-	local endpoint="$1"
-	local options="$2"
-
-	_rest_call _github_curl "https://api.github.com/$endpoint?per_page=100&$options"
-}
+defgraphql __github_list_repos_query <<-'EOF'
+	query list_repos($queryString: String!, $first: Int = 100, $after: String) { 
+	  search(query: $queryString, type:REPOSITORY, first:$first, after: $after) {
+	    repositoryCount
+	    pageInfo {
+	      endCursor
+	      hasNextPage
+	    }
+	    edges {
+	      node {
+	        ... on Repository {
+	          name
+	        }
+	      }
+	    }
+	  }
+	}
+EOF
 
 # download the repository list of <user|org>
 _github_repo_list()
 {
-	_github_call users/"$1"/repos | jq -r '.[].name'
+	local after="null"
+	local hasNextPage="true"
+	local data result
+
+	while [[ $hasNextPage == true ]]; do
+		read -r -d '' data <<-EOF
+			{
+				"query": "$__github_list_repos_query",
+				"variables": {
+					"queryString": "user:$1 fork:true",
+					"after": $after
+				}
+			}
+		EOF
+
+		# execute the query
+		result=$(curl \
+		  -s \
+		  --netrc-file "$GG_AUTH_github" \
+		  -X POST \
+		  --data "$data" \
+		  --url https://api.github.com/graphql)
+
+		# get information about the enxt page
+		IFS=$'\t' read -r hasNextPage endCursor < <(jq -r '.data.search.pageInfo | [.hasNextPage, .endCursor] | @tsv' <<<"$result")
+		after="\"$endCursor\""
+
+		# write out the desired result
+		jq -r '.data.search.edges[].node.name' <<<"$result"
+	done
 }
 
 ##########################
