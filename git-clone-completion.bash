@@ -1240,7 +1240,7 @@ _resolve_var() { echo "${!1}"; }
 _esc_string() {
 	# shellcheck disable=SC1003,SC2089
 	local _scp_path_esc='[][(){}<>",:;^&!$=?`|\\'"'"'[:space:]]'
-	sed -e 's/'$_scp_path_esc'/\\&/g'
+	sed -e 's/'"$_scp_path_esc"'/\\&/g'
 }
 
 _complete_fragment()
