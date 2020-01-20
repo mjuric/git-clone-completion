@@ -18,6 +18,14 @@ $ curl -LO https://github.com/mjuric/git-utils/releases/latest/download/git-clon
 $ source git-clone-completion.bash
 ```
 
+## Compatibility
+
+Works on `bash` 3.2+ (Mac and Linux)
+
+## Prerequisites
+
+* Just [jq](https://stedolan.github.io/jq/download/).
+
 ## Usage
 
 ```bash
