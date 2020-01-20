@@ -13,9 +13,9 @@ class TestGitHub:
     def test_github_auth(self, bash):
         token = os.environ['GITHUB_TOKEN']
         username = os.environ['GITHUB_USERNAME']
-        print(f"homedir: {bash.homedir}")
-        print("HOME:" + bash.run("echo HOME=$HOME"))
-        print("HOME:" + bash.run("echo GITHUB_TOKEN=$GITHUB_TOKEN"))
+#        print(f"homedir: {bash.homedir}")
+#        print("HOME:" + bash.run("echo HOME=$HOME"))
+#        print("HOME:" + bash.run("echo GITHUB_TOKEN=$GITHUB_TOKEN"))
 
         # ensure we get the message about no being logged in
         result = bash.complete("git clone git@github.com:gh-test-acc/")

@@ -20,9 +20,22 @@ _TESTDIR = os.path.dirname(__file__)
 _FIXTURESDIR = os.path.join(_TESTDIR, 'fixtures')
 
 services=[ 'github.com', 'gitlab.com', 'bitbucket.org' ]
-bash_versions=['/bin/bash', '/usr/local/bin/bash']
 wordbreak_variants=["\"'><=;|&(:", "@\"'><=;|&(:"]
-have_git_completion=["/Library/Developer/CommandLineTools/usr/share/git-core/git-completion.bash", None]
+
+bash_versions=['/bin/bash']
+for _bv in ['/usr/local/bin/bash']:
+    if os.path.exists(_bv):
+        bash_versions += [ _bv ]
+
+have_git_completion = [ None ]
+for _gc in [
+    '/usr/share/doc/git-1.8.3.1/contrib/completion/git-completion.bash',		# CentOS 7
+    '/Library/Developer/CommandLineTools/usr/share/git-core/git-completion.bash'	# MacOS
+]:
+    if os.path.exists(_gc):
+        have_git_completion += [ _gc ]
+        break
+
 scope='function'
 
 @pytest.fixture(scope=scope, params=bash_versions)
