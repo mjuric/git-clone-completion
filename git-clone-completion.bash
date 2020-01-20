@@ -1031,6 +1031,12 @@ _ssh_list_repos()
 	local userhost=${1%%:*}
 	local path=${1#*:}
 
+	# remove any trailing backslashes. This can happen if we have a
+	# situation like ('a\ b\ c' 'a\=b\ c'), where the first autocomplete
+	# will match to 'a\'. For the remote ls to work (see below), we have
+	# to drop that trailing backslash.
+	path=${path%\\}
+
 	# prime the cached connection (as all subsequent invocations will be
 	# in subshells and can't set the various __ssh_* variables with
 	# connection reuse info)
@@ -1041,11 +1047,12 @@ _ssh_list_repos()
 	#
 	# 1. list directories with HEAD (bare git dirs) and .git/ (workdirs)
 	# 2. list all directories
-	# 3. merge the above lists, sort them, and run unique -c which prints
+	# 3. escape any characters the shell would be unhappy about
+	# 4. merge the above lists, sort them, and run unique -c which prints
 	#    out the number of times an entry has appeared. the directories
 	#    which are git dirs will have appeared _twice_ (once because they
 	#    were picked up by #1 above, once because of #2.
-	# 4. for each dir that appeared twice, append a ' ' to the end signaling
+	# 5. for each dir that appeared twice, append a ' ' to the end signaling
 	#    the end of completion. otherwise, append a '/'.
 	local cmd
 	read -r -d '' cmd <<-EOF
@@ -1053,9 +1060,11 @@ _ssh_list_repos()
 			ls -aF1dL $path*/HEAD | sed -n 's|/HEAD[^/]*$||p';
 			ls -aF1dL $path*/.git | sed -n 's|/.git/$||p';
 			ls -aF1dL $path* | sed -n 's|/$||p'
-		) 2>/dev/null | sort | uniq -c | sed -nE 's| *2 (.*)|\1 |p; s| *1 (.*)|\1/|p'
+		) 2>/dev/null \
+		| sed -e 's/[][(){}<>",:;^&!\$=?\`|\\'"'"'[:space:]]/\\\&/g' \
+		| sort | uniq -c | sed -nE 's| *2 (.*)|\1 |p; s| *1 (.*)|\1/|p'
 	EOF
-	#echo "$cmd"
+	_dbg "cmd=$cmd"
 
 	# grab all
 	local files
@@ -1063,7 +1072,7 @@ _ssh_list_repos()
 
 	# shellcheck disable=SC2206  # the expansion here is intentional
 	COMPREPLY=( $files )
-	#echo "===$files==="
+	_dbg "===$files==="
 }
 
 # test if we're completing a generic SSH URL, complete it if so, return 1
