@@ -383,10 +383,7 @@ def assert_complete(bash, cmd, skipif=None, xfail=None, cwd=None, env=None, igno
         result = CompletionResult("", [])
     elif got == 2:
         output = _remove_spinner_chars(bash.match.group(1))
-        spc = output[len(output.rstrip()):]	# append any trailing space, as that's significane
-                                                # (e.g., some completions must add a space, while others
-                                                # must not)
-        result = CompletionResult(output, [shlex.split(cmd + output)[-1] + spc])
+        result = CompletionResult(output, [output])
     else:
         # This shouldn't happen unless there's an issue (or the race condition
         # mentioned above under FIXME)

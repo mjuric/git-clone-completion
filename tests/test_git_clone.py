@@ -12,7 +12,7 @@ class TestGitClone:
                                                           "git@github.com:", "https://github.com/" ]),
             ("git clone gi",                            [ "git@gitlab.com:", "git@bitbucket.org:", "git@github.com:" ]),
             ("git clone git@git",                       [ "git@gitlab.com:", "git@github.com:" ]),
-            ("git clone git@gith",                      [ "git@github.com:" ]),
+            ("git clone git@gith",                      [ "ub.com:" ]),
             ("git clone notexists",                     [ ]),
         ]:
             expected_result.sort()
@@ -24,7 +24,7 @@ class TestGitClone:
         # -- should result in no completion
         for service in services:
             for cmdline, expected_result in [
-                ("git clone git@{service}",                 [ "git@{service}:" ]),
+                ("git clone git@{service}",                 [ ":" ]),
                 ("git clone git@{service}:",                [ ]),
             ]:
                 cmdline = cmdline.format(service=service)
