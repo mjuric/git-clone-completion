@@ -1,4 +1,4 @@
-# TAB-completion for `git clone`: GitHub, GitLab, Bitbucket and SSH
+# Tab completion for `git clone` URLs: GitHub, GitLab, Bitbucket, and SSH
 [![Latest Stable Release](https://img.shields.io/github/v/release/mjuric/git-utils) ![Released on](https://img.shields.io/github/release-date/mjuric/git-utils)](https://github.com/mjuric/git-utils/releases/latest)
 [![License](https://img.shields.io/github/license/mjuric/git-utils)](LICENSE)
 
