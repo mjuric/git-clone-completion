@@ -14,20 +14,19 @@ SSH test setups:
 # run this
 ./fixtures/remote-ssh-home/init-git.sh
 
-# add this to ~/.ssh/config (create the ~/.ssh/localhost identity first)
-Host localhost
-    HostName localhost
-    User mjuric
-    IdentityFile ~/.ssh/localhost
+# create identities
+ssh-keygen -C git-clone-completion -N '' -f ~/.ssh/git-clone-completion
 
+# add this to ~/.ssh/config (create the ~/.ssh/git-clone-completion identity first)
 Host test-dummy-*
     HostName localhost
     User mjuric
-    IdentityFile ~/.ssh/localhost
+    IdentitiesOnly yes
+    IdentityFile ~/.ssh/git-clone-completion
 
 # add this to ~/.ssh/authorized_keys
-```
-command="~/projects/github.com/mjuric/git-clone-completion/tests/ssh-preflight.sh" ...public-key...
+# echo "command=\"~/projects/github.com/mjuric/git-clone-completion/tests/ssh-preflight.sh\" $(cat ~/.ssh/git-clone-completion.pub)" >> ~/.ssh/authorized_keys
+command="~/projects/github.com/mjuric/git-clone-completion/tests/ssh-preflight.sh" ...contents of ~/.ssh/git-clone-completion.pub...
 ```
 
 ## Running

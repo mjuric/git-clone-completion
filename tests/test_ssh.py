@@ -5,10 +5,10 @@ from conftest import *
 class TestSSH:
     def test_basic(self, bash):
         for cmdline, expected_result in [
-            ("git clone loc", []),					# initially has no autocompletions
-            ("git clone localhost:f", ['oo/']),
-            ("git clone localhost:foo/", ['rep ']),
-            ("git clone lo", ['calhost:'])				# should remembe the hostnme after a successful login
+            ("git clone test-dummy-loc", []),					# initially has no autocompletions
+            ("git clone test-dummy-localhost:f", ['oo/']),
+            ("git clone test-dummy-localhost:foo/", ['rep ']),
+            ("git clone test-dummy-lo", ['calhost:'])				# should remembe the hostnme after a successful login
         ]:
             expected_result.sort()
 
@@ -17,10 +17,10 @@ class TestSSH:
 
     def test_weird(self, bash):
         for cmdline, expected_result in [
-            ("git clone localhost:w", [ 'eird/' ]),
-            ("git clone localhost:weird/", [ r'weird/a\ b\ c/', r'weird/x\ \&\ \[\]\ \:\ \$\ xx\ \?/', r'weird/bar/', r'weird/x\ \=\ y/']),
-            ("git clone localhost:weird/x\\ \\", [ r'weird/x\ \&\ \[\]\ \:\ \$\ xx\ \?/', r'weird/x\ \=\ y/']),					# test completion on escaped character
-            (r"git clone localhost:weird/x\ \=\ ", [ r'y/' ]),
+            ("git clone test-dummy-localhost:w", [ 'eird/' ]),
+            ("git clone test-dummy-localhost:weird/", [ r'weird/a\ b\ c/', r'weird/x\ \&\ \[\]\ \:\ \$\ xx\ \?/', r'weird/bar/', r'weird/x\ \=\ y/']),
+            ("git clone test-dummy-localhost:weird/x\\ \\", [ r'weird/x\ \&\ \[\]\ \:\ \$\ xx\ \?/', r'weird/x\ \=\ y/']),					# test completion on escaped character
+            (r"git clone test-dummy-localhost:weird/x\ \=\ ", [ r'y/' ]),
         ]:
             expected_result.sort()
 
@@ -46,7 +46,7 @@ class TestSSH:
 
             # verify that re-adding localhost won't squeeze test-dummy-0 out of the cache
             # and that test-dummy-1 got squeezed out
-            assert bash.complete("git clone localhost:f") == [ 'oo/' ], f"Unexpected completion for `{cmdline}`"
+            assert bash.complete("git clone test-dummy-localhost:f") == [ 'oo/' ], f"Unexpected completion for `{cmdline}`"
             assert bash.complete("git clone test-dummy-0") == [ ':' ], f"Unexpected completion for `{cmdline}`"
             assert bash.complete("git clone test-dummy-1") == [], f"Didn't expire a host from cache"
         except:
