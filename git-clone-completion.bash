@@ -593,13 +593,15 @@ init-gitlab-completion()
 		TOKEN="$2"
 	fi
 
-	# securely store the token and user to a netrc-formatted file
-	mkdir -p "$(dirname "$GG_AUTH_gitlab")"
-	rm -f "$GG_AUTH_gitlab"
-	touch "$GG_AUTH_gitlab"
-	chmod 600 "$GG_AUTH_gitlab"
+	# securely (and atomically) store the token and user to a netrc-formatted file
+	local tmpname="$GG_AUTH_gitlab.$$.tmp"
+	mkdir -p "$(dirname "$tmpname")"
+	rm -f "$tmpname"
+	touch "$tmpname"
+	chmod 600 "$tmpname"
 	# note: echo is a builtin so this is secure (https://stackoverflow.com/a/15229498)
-	echo "header \"Authorization: Bearer $TOKEN\"" >> "$GG_AUTH_gitlab"
+	echo "header \"Authorization: Bearer $TOKEN\"" >> "$tmpname"
+	mv "$tmpname" "$GG_AUTH_gitlab"
 
 	# verify that the token works
 	if ! _gitlab_call "users/$GLUSER/projects" >/dev/null; then
@@ -686,13 +688,15 @@ init-github-completion()
 		TOKEN="$2"
 	fi
 
-	# securely store the token and user to a netrc-formatted file
-	mkdir -p "$(dirname "$GG_AUTH_github")"
-	rm -f "$GG_AUTH_github"
-	touch "$GG_AUTH_github"
-	chmod 600 "$GG_AUTH_github"
+	# securely (and atomically) store the token and user to a netrc-formatted file
+	local tmpname="$GG_AUTH_github.$$.tmp"
+	mkdir -p "$(dirname "$tmpname")"
+	rm -f "$tmpname"
+	touch "$tmpname"
+	chmod 600 "$tmpname"
 	# note: echo is a builtin so this is secure (https://stackoverflow.com/a/15229498)
-	echo "machine api.github.com login $GHUSER password $TOKEN" >> "$GG_AUTH_github"
+	echo "machine api.github.com login $GHUSER password $TOKEN" >> "$tmpname"
+	mv "$tmpname" "$GG_AUTH_github"
 
 	# verify that the token works
 	if ! curl -I -f -s --netrc-file "$GG_AUTH_github" "https://api.github.com/user" >/dev/null; then
@@ -703,6 +707,25 @@ init-github-completion()
 	else
 		echo
 		echo "Authentication setup complete; token stored to '$GG_AUTH_github'"
+	fi
+}
+
+#
+# Try extracting authentication credentials from hub's configuration file
+#
+_github_auto_auth()
+{
+	# try to grab credentials from the 'hub' tool
+	[[ -f ~/.config/hub ]] || return 1
+
+	# extract token and user
+	local token user
+	user=$(sed -En 's/[ \t-]*user: (.*)/\1/p' ~/.config/hub 2>/dev/null)
+	token=$(sed -En 's/[ \t]*oauth_token: ([a-z0-9]+)/\1/p' ~/.config/hub 2>/dev/null)
+
+	# attempt auth if we managed to get something useful
+	if [[ -n "$user" && ${#token} == 40 ]]; then
+		init-github-completion "$user" "$token" >/dev/null 2>&1
 	fi
 }
 
@@ -818,6 +841,7 @@ init-bitbucket-completion()
 	fi
 
 	# securely store the token and user to a netrc-formatted file
+	# FIXME: make the creation of this file atomic
 	mkdir -p "$(dirname "$GG_AUTH_bitbucket")"
 	rm -f "$GG_AUTH_bitbucket"
 	touch "$GG_AUTH_bitbucket"
@@ -1284,13 +1308,17 @@ _complete_fragment()
 		local ORG="${URL%%/*}"
 
 		if [[ ! -f "$GG_AUTH" ]]; then
-			# short-circuit if we haven't authenticated, with
-			# a helpful message
-			COMPREPLY=("error: run \`init-$service-completion\` to authenticate for repository completion." "completion currently disabled.")
-			return
-		elif ! hash jq 2>/dev/null; then
-			# short-circuit if we haven't authenticated, with
-			# a helpful message
+			# try scraping credentials from tools know to use this service
+			if [[ $(LC_ALL=C type -t _${service}_auto_auth) != function ]] || ! _${service}_auto_auth; then
+				# short-circuit if we haven't authenticated, with
+				# a helpful message
+				COMPREPLY=("error: run \`init-$service-completion\` to authenticate for repository completion." "completion currently disabled.")
+				return
+			fi
+		fi
+
+		if ! hash jq 2>/dev/null; then
+			# short-circuit if the user doesn't have jq installed
 			COMPREPLY=("Error: need the \`jq\` utility for git clone completion." "see https://stedolan.github.io/jq/ or your package manager")
 			return
 		fi
