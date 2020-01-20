@@ -7,7 +7,7 @@ Bitbucket organizations and repositories to `git clone` command
 line. Works with both public and private repositories and organizations.
 Also autocompletes arbitrary servers accessible via SSH.
 
-![autocompletion gif](http://research.majuric.org/media/git-clone-completions-2.gif)
+[![asciicast](https://asciinema.org/a/SEaTHvOBlohzkb0jf0Jv0H5DJ.svg)](https://asciinema.org/a/SEaTHvOBlohzkb0jf0Jv0H5DJ?cols=105&rows=24)
 
 ## Install
 
