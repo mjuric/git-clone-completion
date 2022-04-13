@@ -1411,7 +1411,7 @@ fi
 # Enable completion for:
 #  git clone
 #  git get
-if declare -F _git > /dev/null; then
+if declare -F _git > /dev/null || declare -F __git_main > /dev/null; then
 	# yes, we have git's autocomplete.
 
 	# Have we already monkey-patched `_git_clone`?
